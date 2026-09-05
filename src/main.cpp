@@ -339,39 +339,56 @@ static void saveConfig()
 
 // ---------------------------------------------------------------- tx / rx
 
+static bool txActive = false;
+static uint32_t txStart = 0;
+static uint16_t txLen = 0;
+
 static void doTransmit(const uint8_t *data, size_t len)
 {
     if (len == 0 || len > MAX_PAYLOAD) { fail(E_BAD_LENGTH, (int16_t)len); return; }
+    if (txActive || busy) { fail(E_BUSY, 0); return; }
 
-    busy = true;
     ledWrite(LED_RX, false);
     ledWrite(LED_TX, true);
-    uint32_t t0 = millis();
-    int16_t s = radio.transmit((uint8_t *)data, len);
-    uint32_t dt = millis() - t0;
+    int16_t s = radio.startTransmit((uint8_t *)data, len);
+    if (s != RADIOLIB_ERR_NONE) {
+        ledWrite(LED_TX, false);
+        fail(E_RADIO, s);
+        startRx();
+        return;
+    }
+    // Deliberately non-blocking: a SF12 packet is 2.5 s of airtime, and the old
+    // blocking transmit() left the UART unserviced long enough to overrun.
+    txActive = true;
+    txStart = millis();
+    txLen = (uint16_t)len;
+    rxFlag = false;
+}
+
+static void finishTransmit()
+{
+    uint32_t dt = millis() - txStart;
+    radio.finishTransmit();
     ledWrite(LED_TX, false);
-    busy = false;
+    txActive = false;
     rxFlag = false;
 
-    if (s == RADIOLIB_ERR_NONE) {
-        txCount++;
-        FrameWriter f(MSG_TX_DONE);
-        f.u16((uint16_t)len);
-        f.u32(dt);
-        f.send(io);
-    } else {
-        fail(E_RADIO, s);
-    }
+    txCount++;
+    FrameWriter f(MSG_TX_DONE);
+    f.u16(txLen);
+    f.u32(dt);
+    f.send(io);
+
     startRx();
 }
 
 static void drainRx()
 {
-    if (!rxFlag || busy) return;
+    if (!rxFlag || busy || txActive) return;
     rxFlag = false;
 
     size_t len = radio.getPacketLength();
-    if (len == 0 || len > MAX_PAYLOAD) { startRx(); return; }
+    if (len == 0 || len > MAX_PAYLOAD) { startRx(); rxFlag = false; return; }
 
     uint8_t buf[MAX_PAYLOAD];
     int16_t s = radio.readData(buf, len);
@@ -388,6 +405,7 @@ static void drainRx()
         fail(E_RADIO, s);
     }
     startRx();
+    rxFlag = false;   // drop any interrupt raised by our own re-arm
 }
 
 // ---------------------------------------------------------------- replies
@@ -539,6 +557,7 @@ static void handleFrame(uint8_t type, const uint8_t *val, uint16_t len)
             break;
 
         case MSG_CW: {
+            if (txActive) { fail(E_BUSY, 0); return; }
             uint16_t secs = len >= 2 ? (uint16_t)(val[0] | (val[1] << 8)) : 5;
             if (secs == 0 || secs > 60) { fail(E_RANGE, (int16_t)secs); return; }
             busy = true;
@@ -603,6 +622,7 @@ static void handleFrame(uint8_t type, const uint8_t *val, uint16_t len)
         case MSG_SCAN: {
             // start Hz, stop Hz, step Hz, dwell ms. Reports peak RSSI per step,
             // in tenths of a dBm, so a host can find activity without an SDR.
+            if (txActive) { fail(E_BUSY, 0); return; }
             if (len < 14) { fail(E_BAD_LENGTH, (int16_t)len); return; }
             uint32_t start = TlvReader::toU32(val, 4);
             uint32_t stop  = TlvReader::toU32(val + 4, 4);
@@ -756,5 +776,17 @@ void setup()
 void loop()
 {
     pollSerial();
-    drainRx();
+    if (txActive) {
+        if (rxFlag) finishTransmit();
+        // A stuck transmit must not wedge the modem: SF12 at 255 bytes is
+        // roughly 8 s, so anything past 15 s is a failure, not slow airtime.
+        else if (millis() - txStart > 15000) {
+            ledWrite(LED_TX, false);
+            txActive = false;
+            fail(E_RADIO, RADIOLIB_ERR_TX_TIMEOUT);
+            startRx();
+        }
+    } else {
+        drainRx();
+    }
 }

@@ -90,6 +90,7 @@
 #define E_UNSUPPORTED   6
 #define E_RADIO         7
 #define E_TX_ONLY       8
+#define E_BUSY          9
 
 // RX flags
 #define RXF_CRC_ERROR   0x01

@@ -61,7 +61,7 @@ SHAPING_NAME = {0: "NONE", 1: "0.3", 2: "0.5", 3: "1.0"}
 ERR_NAME = {
     1: "bad crc", 2: "bad length", 3: "unknown message", 4: "bad parameter",
     5: "out of range", 6: "unsupported on this radio", 7: "radio error",
-    8: "transmit-only modem",
+    8: "transmit-only modem", 9: "busy transmitting",
 }
 
 
