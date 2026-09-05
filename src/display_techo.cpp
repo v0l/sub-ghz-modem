@@ -1,6 +1,6 @@
-#if defined(BOARD_TECHO) && defined(ENABLE_DISPLAY)
-
 #include "display.h"
+
+#if HAS_DISPLAY && defined(BOARD_TECHO)
 #include "board.h"
 #include <GxEPD2_BW.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
@@ -72,4 +72,4 @@ void displayStatus(const char *board, const char *radio, const char *fw,
     epd.hibernate();
 }
 
-#endif // BOARD_TECHO && ENABLE_DISPLAY
+#endif

@@ -247,6 +247,22 @@ def main():
     p.add_argument("pin", type=int)
     p.add_argument("level", type=int, choices=[0, 1])
 
+    p = sub.add_parser("send", help="transmit a higher-level format")
+    p.add_argument("kind", choices=sorted(proto.KINDS))
+    p.add_argument("payload", nargs="?", default="")
+    p.add_argument("--hex", action="store_true", help="payload is hex, not text")
+    p.add_argument("--src", help="source callsign (aprs, ax25)")
+    p.add_argument("--srcssid", type=int)
+    p.add_argument("--dst", help="destination callsign (aprs, ax25)")
+    p.add_argument("--dstssid", type=int)
+    p.add_argument("--lat", help="APRS latitude, e.g. 4911.67N")
+    p.add_argument("--lon", help="APRS longitude, e.g. 00610.90E")
+    p.add_argument("--symbol", help="APRS symbol character")
+    p.add_argument("--addr", type=int, help="POCSAG capcode")
+    p.add_argument("--rate", type=int, help="baud, or words per minute for morse")
+    p.add_argument("--shift", type=int, help="Hz, for rtty and fsk4")
+    p.add_argument("--encoding", type=int)
+
     sub.add_parser("monitor", help="decode every frame until ctrl-c")
 
     # A value list like "-9,0,7" looks like a flag to argparse, and "--" would
@@ -366,6 +382,17 @@ def main():
 
     elif a.cmd == "pin":
         m.request(proto.PIN, bytes([a.pin & 0xFF, a.level]))
+
+    elif a.cmd == "send":
+        body = bytes.fromhex(a.payload) if a.hex else a.payload.encode()
+        fields = {"kind": proto.KINDS[a.kind], "text": body or None,
+                  "src": a.src, "srcssid": a.srcssid, "dst": a.dst,
+                  "dstssid": a.dstssid, "lat": a.lat, "lon": a.lon,
+                  "symbol": a.symbol, "addr": a.addr, "rate": a.rate,
+                  "shift": a.shift, "encoding": a.encoding}
+        print(time.strftime("%H:%M:%S"), end="  ")
+        m.request(proto.PROTO, proto.encode_proto(fields),
+                  want=(proto.TX_DONE, proto.ERR), timeout=60.0)
 
     elif a.cmd == "monitor":
         print("monitoring, ctrl-c to stop")

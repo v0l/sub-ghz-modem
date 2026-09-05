@@ -1,6 +1,12 @@
 #pragma once
 #include <Arduino.h>
 
+#if defined(ENABLE_DISPLAY) && (defined(BOARD_TECHO) || defined(BOARD_TBEAM))
+#define HAS_DISPLAY 1
+#else
+#define HAS_DISPLAY 0
+#endif
+
 // Boards without a screen compile these away to nothing.
 void displayInit();
 

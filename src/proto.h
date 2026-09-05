@@ -36,6 +36,7 @@
 #define MSG_SCAN        0x0D
 #define MSG_LED         0x0E  // u8 mask: bit0 red, bit1 green, bit2 blue
 #define MSG_PIN         0x0F  // u8 arduino pin, u8 level: drive any pin, for finding LEDs
+#define MSG_PROTO       0x10  // higher-level on-air formats, see src/protocols.h
 
 // Device to host
 #define MSG_ACK         0x81
@@ -71,6 +72,21 @@
 #define P_LR_CR         0x13  // u8
 #define P_LR_GRID       0x14  // u8
 #define P_FIXED_LEN     0x15  // u8, 0 = variable length with a length byte
+
+// MSG_PROTO fields
+#define K_KIND          0x01  // u8 ProtoKind
+#define K_TEXT          0x02  // string
+#define K_ADDR          0x03  // u32, POCSAG capcode
+#define K_RATE          0x04  // u16, baud or words per minute
+#define K_SHIFT         0x05  // u32 Hz
+#define K_SRC           0x06  // string callsign
+#define K_SRCSSID       0x07  // u8
+#define K_DST           0x08  // string callsign
+#define K_DSTSSID       0x09  // u8
+#define K_LAT           0x0A  // string, APRS format
+#define K_LON           0x0B  // string
+#define K_SYMBOL        0x0C  // u8 APRS symbol character
+#define K_ENCODING      0x0D  // u8
 
 // Info field ids, reused inside MSG_INFO
 #define I_FW            0x01  // string

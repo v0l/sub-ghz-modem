@@ -11,8 +11,8 @@ MAX_VALUE = 512
 
 # Host to device
 PING, GET_INFO, GET_CONFIG, SET_CONFIG = 0x01, 0x02, 0x03, 0x04
-TX, CW, RX_ENABLE, SAVE, LOAD, RESET, GET_STATS, DIAG, SCAN, LED, PIN = (
-    0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F)
+TX, CW, RX_ENABLE, SAVE, LOAD, RESET, GET_STATS, DIAG, SCAN, LED, PIN, PROTO = (
+    0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10)
 
 # Device to host
 ACK, ERR, INFO, CONFIG, TX_DONE, RX, STATS, DIAG_RESULT, READY, SCAN_RESULT = (
@@ -199,3 +199,36 @@ def decode_scan(value: bytes):
     start, step, steps = struct.unpack("<IIH", value[:10])
     vals = struct.unpack(f"<{steps}h", value[10:10 + steps * 2])
     return start, step, [v / 10.0 for v in vals]
+
+
+# MSG_PROTO: higher-level on-air formats.
+KINDS = {"aprs": 1, "ax25": 2, "pocsag": 3, "rtty": 4,
+         "morse": 5, "hell": 6, "fsk4": 7}
+
+K = {
+    "kind": (0x01, "u8"), "text": (0x02, "str"), "addr": (0x03, "u32"),
+    "rate": (0x04, "u16"), "shift": (0x05, "u32"), "src": (0x06, "str"),
+    "srcssid": (0x07, "u8"), "dst": (0x08, "str"), "dstssid": (0x09, "u8"),
+    "lat": (0x0A, "str"), "lon": (0x0B, "str"), "symbol": (0x0C, "char"),
+    "encoding": (0x0D, "u8"),
+}
+
+
+def encode_proto(fields: dict) -> bytes:
+    out = b""
+    for name, value in fields.items():
+        if value is None:
+            continue
+        kid, kind = K[name]
+        if kind == "str":
+            raw = value if isinstance(value, (bytes, bytearray)) else str(value).encode()
+        elif kind == "char":
+            raw = str(value)[:1].encode()
+        elif kind == "u8":
+            raw = struct.pack("<B", int(value))
+        elif kind == "u16":
+            raw = struct.pack("<H", int(value))
+        else:
+            raw = struct.pack("<I", int(value))
+        out += struct.pack("<BB", kid, len(raw)) + raw
+    return out

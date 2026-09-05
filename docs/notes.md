@@ -106,6 +106,23 @@ branch defines all of them, which is what runtime probing needs.
   sensors. A two-byte sync word false-triggers on noise; include a preamble byte
   or two, for example `AAAA2DD4`.
 
+## Protocol clients need FSK and direct mode
+
+RadioLib's AX25, APRS, Pager, RTTY, Morse, Hellschreiber and FSK4 clients all
+drive the radio in direct mode, which the SX126x only offers from FSK. Calling
+one while in LoRa returns -20 `RADIOLIB_ERR_WRONG_MODEM`. The firmware switches
+to FSK for the duration and restores the previous config afterwards.
+
+`MorseClient::standby()` and `HellClient::standby()` are private, so stop the
+carrier through the PhysicalLayer instead.
+
+## SX127x FSK payloads cap at 63 bytes
+
+`variablePacketLengthMode(255)` returns -4 `RADIOLIB_ERR_PACKET_TOO_LONG` on
+SX127x, whose FSK FIFO is 64 bytes, and that failure takes the whole radio init
+down. Easy to miss because SX126x accepts 255 happily, so FSK looks fine until
+you try it on a T-Beam.
+
 ## Design choices
 
 - Changing any parameter re-runs `begin()` rather than poking registers. Simpler,

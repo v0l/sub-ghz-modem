@@ -10,6 +10,8 @@
 #include "hal.h"
 #include "proto.h"
 #include "display.h"
+#include "protocols.h"
+#include "radio.h"
 
 #if defined(BOARD_TECHO) && !defined(RADIO_SX1262)
 #define RADIO_SX1262        // the T-Echo has no other option
@@ -71,6 +73,8 @@ static ModemRadio radio(new Module(LORA_CS, LORA_DIO1, LORA_RST, LORA_BUSY));
 static ModemRadio radio(new Module(LORA_CS, LORA_DIO0, LORA_RST, LORA_DIO1));
 #endif
 
+PhysicalLayer *radioPhy() { return &radio; }
+
 #ifdef BOARD_NUCLEO_WL55
 // Front-end switch wiring for the Nucleo-WL55JC. Other WL boards differ, and a
 // wrong table shows up as a working radio that neither transmits nor hears.
@@ -89,6 +93,13 @@ static const Module::RfSwitchMode_t rfswitchTable[] = {
 #define CFG_MAGIC    0x4D475A53UL   // "SZGM"
 #define CFG_VERSION  6
 #define MAX_PAYLOAD  255
+#if RADIO_IS_SX126X
+#define MAX_FSK_PAYLOAD 255
+#else
+// SX127x FSK has a 64 byte FIFO, so asking for more fails with PACKET_TOO_LONG
+// and takes the whole radio init down with it.
+#define MAX_FSK_PAYLOAD 63
+#endif
 #define MAX_SYNC     8
 #define CMD_BUF_LEN  (MAX_PAYLOAD * 2 + 32)
 
@@ -251,7 +262,7 @@ static bool radioInit()
         if (s != RADIOLIB_ERR_NONE) { fail(E_RADIO, s); return false; }
 
         if (cfg.fixedLen) s = radio.fixedPacketLengthMode(cfg.fixedLen);
-        else              s = radio.variablePacketLengthMode(MAX_PAYLOAD);
+        else              s = radio.variablePacketLengthMode(MAX_FSK_PAYLOAD);
         if (s != RADIOLIB_ERR_NONE) { fail(E_RADIO, s); return false; }
 
         if ((s = radio.setDataShaping(cfg.shaping)) != RADIOLIB_ERR_NONE) {
@@ -345,7 +356,8 @@ static uint16_t txLen = 0;
 
 static void doTransmit(const uint8_t *data, size_t len)
 {
-    if (len == 0 || len > MAX_PAYLOAD) { fail(E_BAD_LENGTH, (int16_t)len); return; }
+    size_t cap = (cfg.modem == MODE_LORA) ? MAX_PAYLOAD : MAX_FSK_PAYLOAD;
+    if (len == 0 || len > cap) { fail(E_BAD_LENGTH, (int16_t)len); return; }
     if (txActive || busy) { fail(E_BUSY, 0); return; }
 
     ledWrite(LED_RX, false);
@@ -512,6 +524,14 @@ static bool applyParam(uint8_t id, const uint8_t *v, uint8_t len)
     }
 }
 
+// Copies a length-delimited TLV string into a fixed buffer, always terminated.
+static void copyField(char *dst, size_t cap, const uint8_t *src, uint8_t len)
+{
+    size_t n = len < cap - 1 ? len : cap - 1;
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
 // ---------------------------------------------------------------- dispatch
 
 static void handleFrame(uint8_t type, const uint8_t *val, uint16_t len)
@@ -667,6 +687,79 @@ static void handleFrame(uint8_t type, const uint8_t *val, uint16_t len)
             ledWrite(LED_GREEN, val[0] & 0x02);
             ledWrite(LED_BLUE,  val[0] & 0x04);
             sendAck();
+            break;
+        }
+
+        case MSG_PROTO: {
+            if (txActive || busy) { fail(E_BUSY, 0); return; }
+            ProtoRequest req;
+            protoDefaults(&req, cfg.freq);
+
+            TlvReader r(val, len);
+            uint8_t id, plen;
+            const uint8_t *pval;
+            while (r.next(&id, &pval, &plen)) {
+                uint32_t n = TlvReader::toU32(pval, plen);
+                switch (id) {
+                    case K_KIND:     req.kind = (uint8_t)n; break;
+                    case K_ADDR:     req.addr = n; break;
+                    case K_RATE:     req.rate = (uint16_t)n; break;
+                    case K_SHIFT:    req.shiftHz = n; break;
+                    case K_SRCSSID:  req.srcSsid = (uint8_t)n; break;
+                    case K_DSTSSID:  req.dstSsid = (uint8_t)n; break;
+                    case K_SYMBOL:   req.symbol = (uint8_t)n; break;
+                    case K_ENCODING: req.encoding = (uint8_t)n; break;
+                    case K_TEXT: {
+                        // Binary safe: the TLV length is authoritative, and the
+                        // spare byte keeps the text-only modes NUL terminated.
+                        uint16_t n = plen < sizeof(req.data) - 1 ? plen
+                                                                 : sizeof(req.data) - 1;
+                        memcpy(req.data, pval, n);
+                        req.data[n] = 0;
+                        req.dataLen = n;
+                        break;
+                    }
+                    case K_SRC:  copyField(req.src,  sizeof(req.src),  pval, plen); break;
+                    case K_DST:  copyField(req.dst,  sizeof(req.dst),  pval, plen); break;
+                    case K_LAT:  copyField(req.lat,  sizeof(req.lat),  pval, plen); break;
+                    case K_LON:  copyField(req.lon,  sizeof(req.lon),  pval, plen); break;
+                    default: fail(E_BAD_PARAM, id); return;
+                }
+            }
+            if (req.kind == 0) { fail(E_BAD_PARAM, K_KIND); return; }
+
+            // Every one of these clients drives the radio in direct mode, which
+            // the SX126x only offers from FSK; asking while in LoRa returns
+            // RADIOLIB_ERR_WRONG_MODEM.
+            Config saved = cfg;
+            cfg.modem = MODE_FSK;
+            if (!radioInit()) { cfg = saved; radioInit(); startRx(); return; }
+
+            busy = true;
+            ledWrite(LED_RX, false);
+            ledWrite(LED_TX, true);
+            uint32_t t0 = millis();
+            int16_t s = protoSend(&req);
+            uint32_t dt = millis() - t0;
+            ledWrite(LED_TX, false);
+            busy = false;
+
+            // Every client leaves the radio in direct mode, so rebuild the
+            // packet configuration from scratch.
+            cfg = saved;
+            radioInit();
+            startRx();
+            rxFlag = false;
+
+            if (s == RADIOLIB_ERR_NONE) {
+                txCount++;
+                FrameWriter f(MSG_TX_DONE);
+                f.u16(0);
+                f.u32(dt);
+                f.send(io);
+            } else {
+                fail(E_RADIO, s);
+            }
             break;
         }
 

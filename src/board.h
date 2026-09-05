@@ -14,6 +14,9 @@
 #define LORA_BUSY  32  // SX1262 only
 #define LORA_TCXO_V 1.6f
 
+#define OLED_ADDR_A 0x3C   // SSD1306, some modules answer at 0x3D
+#define OLED_ADDR_B 0x3D
+
 #define PMU_SDA    21
 #define PMU_SCL    22
 #define PMU_IRQ    35

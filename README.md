@@ -11,7 +11,8 @@ addressing. Your protocol lives on the host.
 | ST NUCLEO-WL55JC | STM32WL55 | on-die SX126x |
 
 LoRa and FSK/GFSK on every radio. OOK on SX1276 only. LR-FHSS on SX126x only,
-transmit only, opt-in build.
+transmit only, opt-in build. Higher-level formats on top: APRS, AX.25, POCSAG,
+RTTY, Morse, Hellschreiber and 4-FSK. Status screen on boards that have one.
 
 ## Build
 
@@ -31,7 +32,17 @@ tools/modem.py tx "hello"
 tools/modem.py listen
 tools/modem.py scan 433 435 --step 0.05   # RSSI sweep, no SDR needed
 tools/modem.py cw 10                      # carrier, for spectrum work
+
+tools/modem.py send morse "DE N0CALL" --rate 25
+tools/modem.py send pocsag --hex DEADBEEF --addr 123456
+tools/modem.py send aprs "hi" --src N0CALL --lat 5336.00N --lon 00638.00W
+tools/modem.py send rtty --hex 48454C4C4F --rate 45
 ```
+
+`send` kinds: `aprs ax25 pocsag rtty morse hell fsk4`. Payloads are bytes, so
+`--hex` works everywhere except Morse and Hellschreiber, which are inherently
+character formats. These take the radio into direct mode and restore your packet
+config afterwards.
 
 `set` names: `modem freq power reg` always; `bw sf cr sync preamble crc` for
 LoRa; `bitrate fdev rxbw shaping syncbytes fskpreamble fskcrc fixedlen` for
@@ -66,6 +77,10 @@ monitor` replaces a terminal.
 - `batt_mv` on the T-Echo reads high; the divider constant is unverified.
 - The T-Beam SX1262 variant and all LR-FHSS builds are untested on hardware.
   Tested: T-Beam v1.1 SX1276, T-Echo, Nucleo-WL55JC2.
+- The `send` formats are confirmed to key the transmitter with plausible timing,
+  but nothing has been decoded back yet. APRS here is direct 2-FSK, not the
+  1200 baud AFSK a normal APRS station listens for.
+- SX127x FSK payloads cap at 63 bytes, a FIFO limit, not a choice.
 
 ## Alternatives
 
