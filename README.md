@@ -34,9 +34,16 @@ pio run -e wl55-lowband -t upload     # NUCLEO-WL55JC2, 430-510 MHz
 The `-uart2` T-Beam environments move the protocol onto GPIO25/GPIO14 so USB
 stays free for logs. `-lrfhss` environments add the LR-FHSS modem.
 
-T-Echo upload needs `pip install --user adafruit-nrfutil`. The repo ships
-`boards/t-echo.json` and a cut-down `variants/t-echo/`, so no external variant
-package is required.
+The repo ships `boards/t-echo.json` and a cut-down `variants/t-echo/`, so no
+external variant package is required. Serial DFU does not work on the T-Echo's
+0.6.1 bootloader: it enumerates in DFU mode and then answers nothing, so
+`adafruit-nrfutil` times out, and a 1200 bps touch reaches only that serial mode.
+Double-tap reset for the `TECHOBOOT` drive and copy a UF2 across instead:
+
+```sh
+pio run -e techo
+tools/uf2.py .pio/build/techo/firmware.zip /media/$USER/TECHOBOOT/fw.uf2
+```
 
 For the WL55, `pio run -t upload` needs a udev rule for the ST-LINK
 (`0483:374e`). Without one, copy `.pio/build/<env>/firmware.bin` onto the
@@ -97,6 +104,12 @@ is binary, a plain terminal is no longer useful; `monitor` replaces it.
 `fixedlen` is for raw formats that carry no length byte, such as Fine Offset
 sensors. Zero means variable length with a length byte.
 
+## Display
+
+Boards with a screen show firmware, board, radio, frequency and modem, so a
+device on a shelf identifies itself. Drawn at boot and after a configuration
+change only: an e-paper refresh takes seconds and blocks.
+
 ## LEDs
 
 Red while the receiver is armed, blue while transmitting. On the WL55 those are
@@ -146,7 +159,9 @@ These each cost real debugging time.
 - `transmit()` blocks, so the UART is not serviced during a long packet and the
   input FIFO can overrun. The frame CRC now catches the corruption rather than
   acting on it, but the frame is still lost.
-- The T-Beam environments have not been tested on hardware.
+- The T-Beam environments have not been compiled or tested on hardware.
+- `batt_mv` on the T-Echo reads high; the divider constant needs checking
+  against a meter.
 
 ## Regulatory
 

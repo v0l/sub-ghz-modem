@@ -9,6 +9,7 @@
 #include "board.h"
 #include "hal.h"
 #include "proto.h"
+#include "display.h"
 
 #if defined(BOARD_TECHO) && !defined(RADIO_SX1262)
 #define RADIO_SX1262        // the T-Echo has no other option
@@ -523,8 +524,13 @@ static void handleFrame(uint8_t type, const uint8_t *val, uint16_t len)
                     return;
                 }
             }
-            if (reconfigure()) sendConfig();
-            else cfg = saved;
+            if (reconfigure()) {
+                sendConfig();
+                displayStatus(MODEM_BOARD, RADIO_NAME, FW_VERSION,
+                              modeName(cfg.modem), cfg.freq, cfg.power);
+            } else {
+                cfg = saved;
+            }
             break;
         }
 
@@ -721,6 +727,7 @@ void setup()
 
     ledInit();
     powerPath = boardPowerInit();
+    displayInit();
 #if defined(BOARD_NUCLEO_WL55)
     radio.setRfSwitchTable(rfswitchPins, rfswitchTable);   // must precede begin()
 #elif defined(BOARD_TECHO)
@@ -737,6 +744,9 @@ void setup()
         }
     }
     startRx();
+
+    displayStatus(MODEM_BOARD, RADIO_NAME, FW_VERSION,
+                  modeName(cfg.modem), cfg.freq, cfg.power);
 
     FrameWriter f(MSG_READY);
     f.send(io);

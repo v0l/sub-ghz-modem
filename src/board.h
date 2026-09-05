@@ -52,6 +52,16 @@
 // One rail feeds e-paper, GPS, LoRa and the sensor. Nothing works until it is high.
 #define PIN_POWER_EN (0 + 12)
 
+// 1.54" e-paper, on its own SPI bus rather than the radio's.
+#define PIN_EINK_EN    (32 + 11)
+#define PIN_EINK_CS    (0 + 30)
+#define PIN_EINK_BUSY  (0 + 3)
+#define PIN_EINK_DC    (0 + 28)
+#define PIN_EINK_RES   (0 + 2)
+#define PIN_EINK_SCLK  (0 + 31)
+#define PIN_EINK_MOSI  (0 + 29)
+#define EINK_MISO_UNUSED (32 + 7)   // the SPI block needs a pin, nothing is wired
+
 #define BATT_ADC    PIN_A0
 #define BATT_DIVIDER 2.0f
 
