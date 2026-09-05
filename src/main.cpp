@@ -74,6 +74,8 @@ static ModemRadio radio(new Module(LORA_CS, LORA_DIO0, LORA_RST, LORA_DIO1));
 #endif
 
 PhysicalLayer *radioPhy() { return &radio; }
+static bool radioInit();
+bool radioPacketMode() { return radioInit(); }
 
 #ifdef BOARD_NUCLEO_WL55
 // Front-end switch wiring for the Nucleo-WL55JC. Other WL boards differ, and a

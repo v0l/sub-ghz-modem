@@ -24,6 +24,7 @@ int16_t protoSend(const ProtoRequest *r)
             APRSClient aprs(&ax25);
             state = ax25.begin(r->src, r->srcSsid);
             if (state != RADIOLIB_ERR_NONE) return state;
+            radioPacketMode();
             state = aprs.begin((char)r->symbol);
             if (state != RADIOLIB_ERR_NONE) return state;
             if (r->lat[0] && r->lon[0]) {
@@ -39,6 +40,7 @@ int16_t protoSend(const ProtoRequest *r)
             AX25Client ax25(phy);
             state = ax25.begin(r->src, r->srcSsid);
             if (state != RADIOLIB_ERR_NONE) return state;
+            radioPacketMode();
             // Build the frame by hand so the information field can hold
             // arbitrary bytes rather than a C string.
             AX25Frame frame(r->dst, r->dstSsid, r->src, r->srcSsid,

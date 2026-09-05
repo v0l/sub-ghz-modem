@@ -17,6 +17,7 @@ one candidate is present.
 """
 
 import argparse
+import fcntl
 import glob
 import os
 import sys
@@ -79,6 +80,12 @@ def parse_value(name, text):
 class Modem:
     def __init__(self, port, baud=115200, verbose=False):
         self.ser = serial.Serial(port, baud, timeout=0.05)
+        # Two readers on one port silently steal each other's bytes, and pyserial
+        # then throws an unrelated-looking "device disconnected" error.
+        try:
+            fcntl.flock(self.ser.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            sys.exit(f"{port} is already in use by another modem.py")
         self.dec = proto.Decoder()
         self.verbose = verbose
         self.pending = []

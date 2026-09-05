@@ -81,6 +81,10 @@ monitor` replaces a terminal.
   but nothing has been decoded back yet. APRS here is direct 2-FSK, not the
   1200 baud AFSK a normal APRS station listens for.
 - SX127x FSK payloads cap at 63 bytes, a FIFO limit, not a choice.
+- **FSK does not interoperate between SX127x and SX126x yet**, in either
+  direction, with matched bitrate, deviation, sync word and CRC. LoRa between
+  the same two boards is verified working. Since AX.25 and APRS ride on FSK
+  packets, those are unverified too.
 
 ## Alternatives
 
