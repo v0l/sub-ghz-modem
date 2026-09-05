@@ -6,7 +6,7 @@ no addressing. Whatever protocol you want lives on the host.
 
 | board | MCU | radio | notes |
 |---|---|---|---|
-| LilyGO T-Beam v0.7 - v1.2 | ESP32 | SX1276 or SX1262 | AXP192/AXP2101 rails handled automatically |
+| LilyGO T-Beam v0.7 - v1.2 | ESP32 | SX1276 or SX1262 | AXP192/AXP2101 rails handled automatically, config in NVS |
 | LilyGO T-Echo | nRF52840 | SX1262 | UF2/DFU flashing, config in LittleFS |
 | ST NUCLEO-WL55JC | STM32WL55 | on-die SX126x core | no SPI radio bus, config in emulated EEPROM |
 
@@ -148,6 +148,10 @@ These each cost real debugging time.
   and switching modulation needs it anyway.
 - The stored config is a versioned struct blob. Bumping `CFG_VERSION` reverts a
   device to defaults rather than loading a mismatched layout.
+- XPowersLib picks its chip with `#if/#elif`, so naming both `XPOWERS_CHIP_AXP192`
+  and `XPOWERS_CHIP_AXP2101` silently compiles only the first and the other class
+  is undeclared. Name neither and its `#else` branch defines all of them, which
+  is what runtime probing needs.
 - Toolchain rot: pinned platform versions disappear from the PlatformIO registry,
   and stm32duino 3.x moved to ArduinoCore-API whose typed `PinMode` breaks
   RadioLib's STM32WL HAL, so the WL55 build pins the 2.x core.
@@ -159,9 +163,11 @@ These each cost real debugging time.
 - `transmit()` blocks, so the UART is not serviced during a long packet and the
   input FIFO can overrun. The frame CRC now catches the corruption rather than
   acting on it, but the frame is still lost.
-- The T-Beam environments have not been compiled or tested on hardware.
 - `batt_mv` on the T-Echo reads high; the divider constant needs checking
-  against a meter.
+  against a meter. On the T-Beam it reads 0 with no battery fitted, which is the
+  PMU reporting honestly rather than a fault.
+- The T-Beam SX1262 variant and every LR-FHSS build are still untested on
+  hardware. Tested: T-Beam v1.1 SX1276, T-Echo, Nucleo-WL55JC2.
 
 ## Regulatory
 

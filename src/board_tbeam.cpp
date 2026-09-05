@@ -2,8 +2,8 @@
 
 #include "board.h"
 
-#define XPOWERS_CHIP_AXP192
-#define XPOWERS_CHIP_AXP2101
+// XPowersLib selects a chip with #if/#elif, so naming both would silently pick
+// only the first. Naming none takes its #else branch, which defines all of them.
 #include <XPowersLib.h>
 #include <Wire.h>
 
