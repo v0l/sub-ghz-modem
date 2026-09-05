@@ -138,6 +138,24 @@ bites hard rather than degrading gracefully.
 Preamble units are still a real difference worth knowing (bits on SX126x, bytes
 on SX127x) but were not the cause here.
 
+## AX.25 is correct, and the bit order will fool you
+
+RadioLib's AX.25 output is spec conformant: addresses shifted left one bit with
+the HDLC extension bits, UI control 0x03, PID 0xF0, low-order bit first on air,
+and a CRC-16/X.25 FCS transmitted low byte first. Verified over the air by
+decoding a position report received on another board.
+
+Two traps when writing a decoder for it. The radio hands you bytes MSB first,
+but AX.25 bit order is LSB first, so unpack MSB first and repack LSB first.
+And 0x7E is a palindrome, so the flags decode identically under either bit
+order and will happily confirm a wrong assumption while the address field comes
+out as garbage.
+
+RadioLib is pinned to a fork branch carrying one fix: `AX25Client::sendFrame()`
+used `preambleLen + 1` as the NRZI start index, but that value counts bytes
+everywhere else in the function, so only the first nine bits were left
+unencoded. AX.25 NRZI-encodes the whole transmission including flags.
+
 ## Design choices
 
 - Changing any parameter re-runs `begin()` rather than poking registers. Simpler,

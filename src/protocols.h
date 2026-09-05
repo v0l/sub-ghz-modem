@@ -35,5 +35,10 @@ struct ProtoRequest {
 
 void protoDefaults(ProtoRequest *r, float baseMhz);
 
+// Worst-case framed size for the packet-based kinds, so the caller can refuse a
+// payload the radio cannot carry. Zero for the direct-mode kinds, which stream
+// and have no packet limit.
+size_t protoFramedLen(const ProtoRequest *r);
+
 // Returns a RadioLib status code.
 int16_t protoSend(const ProtoRequest *r);

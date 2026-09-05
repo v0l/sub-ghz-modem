@@ -18,6 +18,7 @@ RTTY, Morse, Hellschreiber and 4-FSK. Status screen on boards that have one.
 
 ```sh
 pio run -e tbeam-sx1276 -t upload    # also tbeam-sx1262, and -uart2 variants
+# RadioLib is pinned to a fork, see docs/notes.md for why
 pio run -e wl55 -t upload            # JC1, 865-928 MHz
 pio run -e wl55-lowband -t upload    # JC2, 430-510 MHz
 pio run -e techo                     # then see docs/notes.md, UF2 only
@@ -80,11 +81,13 @@ monitor` replaces a terminal.
 - APRS here is an AX.25 frame inside an ordinary FSK packet, not the 1200 baud
   AFSK a normal APRS station listens for, so normal APRS gear will not hear it.
 - SX127x FSK payloads cap at 63 bytes, a FIFO limit, not a choice.
-- The `send` formats key the radio and the frames arrive intact over a link, but
-  none has been decoded by an independent tool, so spec conformance is unproven.
-  AX.25 frames carry the expected leading HDLC flag and then bytes that do not
-  resolve to the callsigns under either bit order. Validate with direwolf or
-  multimon-ng before trusting any of it.
+- APRS and AX.25 are verified: a position report transmitted T-Beam to T-Echo
+  decodes to the right callsigns, SSIDs, control, PID and info with a valid
+  CRC-16/X.25 FCS. The other five `send` formats key the radio with plausible
+  timing but have not been decoded by an independent tool.
+- On SX127x an AX.25 frame must fit the 63 byte FSK payload, which leaves about
+  20 characters of APRS comment. Longer frames are now refused rather than
+  transmitted truncated.
 
 ## Alternatives
 

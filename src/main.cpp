@@ -730,6 +730,12 @@ static void handleFrame(uint8_t type, const uint8_t *val, uint16_t len)
             }
             if (req.kind == 0) { fail(E_BAD_PARAM, K_KIND); return; }
 
+            // An AX.25 frame longer than the FSK payload limit is transmitted
+            // truncated and zero padded, which decodes as a corrupt frame
+            // rather than failing visibly. Refuse it instead.
+            size_t framed = protoFramedLen(&req);
+            if (framed > MAX_FSK_PAYLOAD) { fail(E_BAD_LENGTH, (int16_t)framed); return; }
+
             // Every one of these clients drives the radio in direct mode, which
             // the SX126x only offers from FSK; asking while in LoRa returns
             // RADIOLIB_ERR_WRONG_MODEM.
