@@ -77,14 +77,14 @@ monitor` replaces a terminal.
 - `batt_mv` on the T-Echo reads high; the divider constant is unverified.
 - The T-Beam SX1262 variant and all LR-FHSS builds are untested on hardware.
   Tested: T-Beam v1.1 SX1276, T-Echo, Nucleo-WL55JC2.
-- The `send` formats are confirmed to key the transmitter with plausible timing,
-  but nothing has been decoded back yet. APRS here is direct 2-FSK, not the
-  1200 baud AFSK a normal APRS station listens for.
+- APRS here is an AX.25 frame inside an ordinary FSK packet, not the 1200 baud
+  AFSK a normal APRS station listens for, so normal APRS gear will not hear it.
 - SX127x FSK payloads cap at 63 bytes, a FIFO limit, not a choice.
-- **FSK does not interoperate between SX127x and SX126x yet**, in either
-  direction, with matched bitrate, deviation, sync word and CRC. LoRa between
-  the same two boards is verified working. Since AX.25 and APRS ride on FSK
-  packets, those are unverified too.
+- The `send` formats key the radio and the frames arrive intact over a link, but
+  none has been decoded by an independent tool, so spec conformance is unproven.
+  AX.25 frames carry the expected leading HDLC flag and then bytes that do not
+  resolve to the callsigns under either bit order. Validate with direwolf or
+  multimon-ng before trusting any of it.
 
 ## Alternatives
 

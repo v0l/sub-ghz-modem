@@ -123,22 +123,20 @@ SX127x, whose FSK FIFO is 64 bytes, and that failure takes the whole radio init
 down. Easy to miss because SX126x accepts 255 happily, so FSK looks fine until
 you try it on a T-Beam.
 
-## FSK interop between SX127x and SX126x is unsolved
+## FSK deviation and receive bandwidth must match
 
-LoRa between a T-Beam SX1276 and a T-Echo SX1262 works perfectly, both
-directions, zero loss. FSK between the same two boards receives nothing either
-way, while both sides report a successful transmit.
+FSK between a T-Beam SX1276 and a T-Echo SX1262 received nothing in either
+direction while both sides reported successful transmits. Not a chip
+incompatibility: the old defaults were `bitrate 4.8, fdev 5.0, rxbw 156.2`, which
+puts about 15 kHz of signal in 156 kHz of receiver bandwidth, so the demodulator
+saw roughly ten times more noise than signal.
 
-Ruled out so far: bitrate, deviation, sync word, CRC, and encoding, which is NRZ
-with no whitening on both chips by default.
+`fdev 25, rxbw 58.6` works first time, both directions. Defaults changed to
+match. The rule is the obvious one, `rxbw` about `2 * fdev + bitrate`, and it
+bites hard rather than degrading gracefully.
 
-Prime suspect is the preamble unit difference documented above. A SX126x default
-of 16 puts 2 bytes on air, too short for the SX127x receiver to lock. That
-explains SX126x to SX127x, but not the reverse, where 16 bytes goes out and the
-SX126x still hears nothing. At least one more difference remains unfound.
-
-Next step is a scope or SDR on the burst rather than more blind parameter
-matching.
+Preamble units are still a real difference worth knowing (bits on SX126x, bytes
+on SX127x) but were not the cause here.
 
 ## Design choices
 

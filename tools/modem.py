@@ -36,7 +36,7 @@ PRESETS = {
     "meshtastic-eu": "modem=lora freq=869.502 bw=250 sf=11 cr=5 sync=0x2B preamble=16",
     "lora-eu-868": "modem=lora freq=868.1 bw=125 sf=9 cr=7 sync=0x12 preamble=8 power=14",
     "lora-434": "modem=lora freq=434.0 bw=125 sf=9 cr=7 sync=0x12 preamble=8 power=10",
-    "fsk-50k": "modem=fsk bitrate=50 fdev=25 rxbw=156.2 shaping=0.5 syncbytes=2DD4",
+    "fsk-50k": "modem=fsk bitrate=50 fdev=50 rxbw=156.2 shaping=0.5 syncbytes=2DD4",
     # Fine Offset WH24/WH25/WH51/WH65 family: 17.24 kbit/s FSK, AA AA AA preamble
     # then a 2D D4 sync, raw fixed-length frame, station's own CRC in the payload.
     "fineoffset-868": "modem=fsk freq=868.35 bitrate=17.241 fdev=35 rxbw=117.3 "

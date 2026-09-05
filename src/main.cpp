@@ -93,7 +93,7 @@ static const Module::RfSwitchMode_t rfswitchTable[] = {
 
 #define FW_VERSION   "1.2.0"
 #define CFG_MAGIC    0x4D475A53UL   // "SZGM"
-#define CFG_VERSION  6
+#define CFG_VERSION  7
 #define MAX_PAYLOAD  255
 #if RADIO_IS_SX126X
 #define MAX_FSK_PAYLOAD 255
@@ -151,7 +151,7 @@ static const Config defaults = {
     CFG_MAGIC, CFG_VERSION,
     MODE_LORA, DEFAULT_FREQ, 17,
     125.0f, 9, 7, 0x12, 8, true,
-    4.8f, 5.0f, 156.2f, RADIOLIB_SHAPING_NONE, 2, {0x2D, 0xD4, 0, 0, 0, 0, 0, 0}, 16, true, 0,
+    4.8f, 25.0f, 58.6f, RADIOLIB_SHAPING_NONE, 2, {0x2D, 0xD4, 0, 0, 0, 0, 0, 0}, 16, true, 0,
     0, 0, false,
 #ifdef DEFAULT_REG_LDO
     DEFAULT_REG_LDO,
