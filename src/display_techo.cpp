@@ -27,12 +27,18 @@ void displayInit()
     ready = true;
 }
 
-void displayStatus(const char *board, const char *radio, const char *fw,
+void displayRender(const char *board, const char *radio, const char *fw,
                    const char *modem, float freqMhz, int8_t power)
 {
     if (!ready) return;
 
-    char freq[24], line[40];
+    char freq[24], line[40], batt[16];
+    int pct = boardBatteryPercent();
+    uint32_t mv = (uint32_t)lroundf(boardBatteryVoltage() * 1000.0f);
+    if (pct >= 0)
+        snprintf(batt, sizeof(batt), "%d%%", pct);
+    else
+        batt[0] = 0;
     // %f is absent from newlib-nano, so build the frequency by hand.
     uint32_t khz = (uint32_t)lroundf(freqMhz * 1000.0f);
     snprintf(freq, sizeof(freq), "%lu.%03lu MHz",
@@ -47,6 +53,11 @@ void displayStatus(const char *board, const char *radio, const char *fw,
         epd.setFont(&FreeMonoBold9pt7b);
         epd.setCursor(4, 20);
         epd.print("sub-ghz-modem");
+        if (batt[0]) {
+            // FreeMonoBold9pt is 11 px per glyph at this size.
+            epd.setCursor(epd.width() - 4 - 11 * (int)strlen(batt), 20);
+            epd.print(batt);
+        }
 
         epd.drawLine(4, 26, epd.width() - 4, 26, GxEPD_BLACK);
 
@@ -57,6 +68,12 @@ void displayStatus(const char *board, const char *radio, const char *fw,
         snprintf(line, sizeof(line), "radio %s", radio);
         epd.setCursor(4, y); epd.print(line); y += 18;
         snprintf(line, sizeof(line), "fw    %s", fw);
+        epd.setCursor(4, y); epd.print(line); y += 18;
+        if (batt[0])
+            snprintf(line, sizeof(line), "batt  %d%% %lu.%02luV", pct,
+                     (unsigned long)(mv / 1000), (unsigned long)((mv % 1000) / 10));
+        else
+            snprintf(line, sizeof(line), "batt  --");
         epd.setCursor(4, y); epd.print(line); y += 24;
 
         epd.setFont(&FreeMonoBold9pt7b);

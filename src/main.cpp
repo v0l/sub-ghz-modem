@@ -907,5 +907,7 @@ void loop()
         }
     } else {
         drainRx();
+        // Repainting e-paper blocks for seconds, so never during a transmit.
+        displayPoll();
     }
 }

@@ -129,3 +129,6 @@
 // power path, used in the boot banner and in the fatal-init message.
 const char *boardPowerInit();
 float boardBatteryVoltage();
+
+// 0..100 from the cell voltage, or -1 when no battery is readable.
+int boardBatteryPercent();

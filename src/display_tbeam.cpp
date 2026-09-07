@@ -30,7 +30,7 @@ void displayInit()
     }
 }
 
-void displayStatus(const char *board, const char *radio, const char *fw,
+void displayRender(const char *board, const char *radio, const char *fw,
                    const char *modem, float freqMhz, int8_t power)
 {
     if (!ready) return;
@@ -43,6 +43,15 @@ void displayStatus(const char *board, const char *radio, const char *fw,
     oled.setTextSize(1);
     oled.setCursor(0, 0);
     oled.print("sub-ghz-modem");
+
+    int pct = boardBatteryPercent();
+    if (pct >= 0) {
+        char batt[8];
+        snprintf(batt, sizeof(batt), "%d%%", pct);
+        oled.setCursor(127 - 6 * (int)strlen(batt), 0);
+        oled.print(batt);
+    }
+
     oled.drawLine(0, 10, 127, 10, SSD1306_WHITE);
 
     oled.setCursor(0, 16);

@@ -14,3 +14,12 @@ void displayInit();
 // slow and blocking, so nothing calls this on a per-packet basis.
 void displayStatus(const char *board, const char *radio, const char *fw,
                    const char *modem, float freqMhz, int8_t power);
+
+// Cheap to call from loop(). Repaints the last status only when the battery
+// percentage has moved far enough to change what is on the glass.
+void displayPoll();
+
+// Board-specific paint. Callers want displayStatus(), which also caches the
+// arguments so displayPoll() can repaint without them.
+void displayRender(const char *board, const char *radio, const char *fw,
+                   const char *modem, float freqMhz, int8_t power);
