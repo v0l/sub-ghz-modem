@@ -13,10 +13,12 @@ MAX_VALUE = 512
 PING, GET_INFO, GET_CONFIG, SET_CONFIG = 0x01, 0x02, 0x03, 0x04
 TX, CW, RX_ENABLE, SAVE, LOAD, RESET, GET_STATS, DIAG, SCAN, LED, PIN, PROTO = (
     0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10)
+GPS, BLE = 0x11, 0x12
 
 # Device to host
 ACK, ERR, INFO, CONFIG, TX_DONE, RX, STATS, DIAG_RESULT, READY, SCAN_RESULT = (
     0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A)
+NMEA = 0x8B
 
 MSG_NAME = {v: k for k, v in globals().items() if isinstance(v, int) and k.isupper()}
 
@@ -51,6 +53,7 @@ INFO_FIELDS = {
     0x01: ("fw", "str"), 0x02: ("board", "str"), 0x03: ("radio", "str"),
     0x04: ("max_payload", "u16"), 0x05: ("batt_mv", "u16"),
     0x06: ("uptime_s", "u32"), 0x07: ("power_path", "str"),
+    0x08: ("gps", "str"), 0x09: ("ble", "str"), 0x0A: ("ble_name", "str"),
 }
 
 MODEMS = {"lora": 0, "fsk": 1, "gfsk": 1, "ook": 2, "lrfhss": 3}
@@ -61,7 +64,7 @@ SHAPING_NAME = {0: "NONE", 1: "0.3", 2: "0.5", 3: "1.0"}
 ERR_NAME = {
     1: "bad crc", 2: "bad length", 3: "unknown message", 4: "bad parameter",
     5: "out of range", 6: "unsupported on this radio", 7: "radio error",
-    8: "transmit-only modem", 9: "busy transmitting",
+    8: "transmit-only modem", 9: "busy transmitting", 10: "no GPS fix",
 }
 
 
@@ -210,7 +213,7 @@ K = {
     "rate": (0x04, "u16"), "shift": (0x05, "u32"), "src": (0x06, "str"),
     "srcssid": (0x07, "u8"), "dst": (0x08, "str"), "dstssid": (0x09, "u8"),
     "lat": (0x0A, "str"), "lon": (0x0B, "str"), "symbol": (0x0C, "char"),
-    "encoding": (0x0D, "u8"),
+    "encoding": (0x0D, "u8"), "gps": (0x0E, "u8"),
 }
 
 

@@ -14,8 +14,15 @@
 extern "C" {
 #endif
 
-// The T-Echo fits a 32.768 kHz crystal (X2), so use the low-frequency XO.
+// The internal RC oscillator, not the X2 crystal footprint. On LFXO this board
+// advertises normally but every BLE connection dies inside a second with
+// le-connection-abort-by-local; on LFRC it connects in well under a second and
+// stays up. Build -DTECHO_LFXO if your board's crystal is fitted and working.
+#ifdef TECHO_LFXO
 #define USE_LFXO
+#else
+#define USE_LFRC
+#endif
 
 #define PINS_COUNT          (48)
 #define NUM_DIGITAL_PINS    (48)
@@ -28,6 +35,10 @@ extern "C" {
 #define PIN_LED3     (0 + 13)   // green
 #define LED_BUILTIN  PIN_LED1
 #define LED_STATE_ON 0
+// Bluefruit drives a connection LED by these names and will not compile
+// without them. Same mapping as src/board.h: red P0.13, blue P0.14.
+#define LED_RED      (0 + 13)
+#define LED_BLUE     (0 + 14)
 
 // Buttons. P0.18 is silkscreened RESET but the bootloader configures it as GPIO.
 #define PIN_BUTTON1        (32 + 10)

@@ -7,6 +7,9 @@
   modem.py tx --hex DEADBEEF
   modem.py cw 10
   modem.py listen --seconds 120
+  modem.py gps                 # stream NMEA from the onboard receiver
+  modem.py gps --gpsd          # and serve it on the gpsd port, 2947
+  modem.py --ble info          # same protocol over the BLE UART
   modem.py sweep power -9,0,7,14,17,20,22 --gap 5
   modem.py ab reg 1,0 --gap 30 --cw 10
   modem.py preset meshtastic-eu --listen
@@ -26,7 +29,7 @@ import time
 try:
     import serial  # pyserial
 except ImportError:
-    sys.exit("pip install pyserial")
+    serial = None   # only needed for the serial transport
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import proto  # noqa: E402
@@ -77,17 +80,28 @@ def parse_value(name, text):
     return text
 
 
+def open_serial(port, baud):
+    if serial is None:
+        sys.exit("pip install pyserial")
+    ser = serial.Serial(port, baud, timeout=0.05)
+    # Two readers on one port silently steal each other's bytes, and pyserial
+    # then throws an unrelated-looking "device disconnected" error.
+    try:
+        fcntl.flock(ser.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit(f"{port} is already in use by another modem.py")
+    return ser
+
+
 class Modem:
-    def __init__(self, port, baud=115200, verbose=False):
-        self.ser = serial.Serial(port, baud, timeout=0.05)
-        # Two readers on one port silently steal each other's bytes, and pyserial
-        # then throws an unrelated-looking "device disconnected" error.
-        try:
-            fcntl.flock(self.ser.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            sys.exit(f"{port} is already in use by another modem.py")
+    """Speaks the protocol over any link with read/write/flush: a serial port
+    or, with --ble, the Nordic UART service."""
+
+    def __init__(self, link, verbose=False):
+        self.ser = link
         self.dec = proto.Decoder()
         self.verbose = verbose
+        self.on_nmea = None   # set to a callable to divert the NMEA feed
         self.pending = []
         time.sleep(0.3)
         self.ser.reset_input_buffer()
@@ -111,6 +125,12 @@ class Modem:
             self._read()
             while self.pending:
                 mtype, value = self.pending.pop(0)
+                if mtype == proto.NMEA:
+                    if self.on_nmea:
+                        self.on_nmea(value.decode("ascii", "replace"))
+                    elif show_events:
+                        show(mtype, value)
+                    continue
                 if mtype in (proto.RX,) and show_events:
                     show(mtype, value)
                     continue
@@ -138,7 +158,11 @@ class Modem:
         while time.time() < end:
             self._read()
             while self.pending:
-                show(*self.pending.pop(0), stamp=True)
+                mtype, value = self.pending.pop(0)
+                if mtype == proto.NMEA and self.on_nmea:
+                    self.on_nmea(value.decode("ascii", "replace"))
+                else:
+                    show(mtype, value, stamp=True)
             time.sleep(0.02)
 
 
@@ -179,6 +203,8 @@ def show(mtype, value, stamp=False):
             flags.append("XOSC_START")
         print(f"{prefix}ocp=0x{ocp:02X} ({ocp * 2.5:.1f} mA)  "
               f"errors=0x{errs:04X} {' '.join(flags) or 'none'}")
+    elif mtype == proto.NMEA:
+        print(prefix + value.decode("ascii", "replace"))
     elif mtype == proto.READY:
         print(f"{prefix}modem ready")
     else:
@@ -203,12 +229,27 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port")
+    # A value-taking --ble would swallow the subcommand, so the target is its
+    # own option.
+    ap.add_argument("--ble", action="store_true",
+                    help="talk over BLE instead of the serial port")
+    ap.add_argument("--ble-target", metavar="NAME|ADDRESS",
+                    help="pick one modem when several are advertising")
+    ap.add_argument("--ble-adapter", metavar="hciN",
+                    help="use one controller instead of trying each in turn")
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("-v", "--verbose", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    for name in ("ping", "info", "get", "stats", "save", "load", "reset", "diag"):
+    for name in ("ping", "info", "get", "stats", "save", "load", "diag"):
         sub.add_parser(name)
+
+    p = sub.add_parser("list", help="show serial ports and BLE modems in range")
+    p.add_argument("--seconds", type=float, default=6.0, help="BLE scan time")
+
+    p = sub.add_parser("reset")
+    p.add_argument("--bootloader", action="store_true",
+                   help="reboot into UF2 mode instead (T-Echo only)")
 
     p = sub.add_parser("set", help="apply name=value settings in one frame")
     p.add_argument("pairs", nargs="+", metavar="NAME=VALUE")
@@ -247,6 +288,18 @@ def main():
     p.add_argument("--threshold", type=float, default=6.0,
                    help="dB above the median floor to report")
 
+    p = sub.add_parser("gps", help="stream NMEA from the onboard GPS receiver")
+    p.add_argument("state", nargs="?", choices=["on", "off"], default="on")
+    p.add_argument("--seconds", type=float, default=0)
+    p.add_argument("--gpsd", action="store_true",
+                   help="serve the feed on the gpsd JSON protocol")
+    p.add_argument("--gpsd-host", default="127.0.0.1")
+    p.add_argument("--gpsd-port", type=int, default=2947)
+    p.add_argument("--quiet", action="store_true", help="do not print sentences")
+
+    p = sub.add_parser("ble", help="advertise the BLE UART, or stop")
+    p.add_argument("state", nargs="?", choices=["on", "off"], default="on")
+
     p = sub.add_parser("led", help="force LEDs on, for checking pin mapping")
     p.add_argument("colours", help="comma separated: red,green,blue,off,all")
 
@@ -265,6 +318,8 @@ def main():
     p.add_argument("--lat", help="APRS latitude, e.g. 4911.67N")
     p.add_argument("--lon", help="APRS longitude, e.g. 00610.90E")
     p.add_argument("--symbol", help="APRS symbol character")
+    p.add_argument("--gps", action="store_true",
+                   help="take lat/lon from the last GPS fix")
     p.add_argument("--addr", type=int, help="POCSAG capcode")
     p.add_argument("--rate", type=int, help="baud, or words per minute for morse")
     p.add_argument("--shift", type=int, help="Hz, for rtty and fsk4")
@@ -285,13 +340,56 @@ def main():
     if getattr(a, "values_opt", None):
         a.values = a.values_opt
 
-    m = Modem(a.port or find_port(), a.baud, a.verbose)
+    if a.cmd == "list":
+        list_devices(a)
+        return
 
+    if a.ble or a.ble_target:
+        import bleuart
+        link = bleuart.BleLink(a.ble_target, verbose=a.verbose,
+                               adapter=a.ble_adapter)
+        print(f"connected to {link.name} over BLE", file=sys.stderr)
+    else:
+        link = open_serial(a.port or find_port(), a.baud)
+    m = Modem(link, a.verbose)
+
+    try:
+        run(a, m)
+    finally:
+        # A BLE link left open keeps BlueZ holding the ACL, and the modem then
+        # stays "connected" and stops advertising to everyone else.
+        close = getattr(m.ser, "close", None)
+        if close:
+            close()
+
+
+def list_devices(a):
+    ports = sorted(glob.glob("/dev/serial/by-id/*"))
+    print("serial:")
+    for path in ports or []:
+        print(f"  {path}  ->  {os.path.realpath(path)}")
+    if not ports:
+        print("  none")
+
+    print(f"ble (scanning {a.seconds:.0f} s):")
+    import bleuart
+    found = bleuart.scan(a.seconds, a.ble_adapter)
+    for address, name, rssi, is_modem in found:
+        tag = "sub-ghz-modem" if is_modem else "nordic uart"
+        print(f"  {address}  {name:<20} {rssi:>4} dBm  {tag}")
+    if not found:
+        print("  none")
+
+
+def run(a, m):
     simple = {"ping": proto.PING, "info": proto.GET_INFO, "get": proto.GET_CONFIG,
               "stats": proto.GET_STATS, "save": proto.SAVE, "load": proto.LOAD,
-              "reset": proto.RESET, "diag": proto.DIAG}
+              "diag": proto.DIAG}
 
-    if a.cmd in simple:
+    if a.cmd == "reset":
+        m.request(proto.RESET, b"\x01" if a.bootloader else b"\x00")
+
+    elif a.cmd in simple:
         m.request(simple[a.cmd])
 
     elif a.cmd == "set":
@@ -378,6 +476,36 @@ def main():
                 print(f"  {f:9.3f} MHz  {v:7.1f} dBm  +{v - floor:.1f} dB  "
                       f"{'#' * min(int(v - floor), 50)}")
 
+    elif a.cmd == "gps":
+        if a.state == "off":
+            m.request(proto.GPS, b"\x00")
+        else:
+            m.request(proto.GPS, b"\x01")
+            server = None
+            if a.gpsd:
+                import gpsd as gpsd_server
+                server = gpsd_server.GpsdServer(a.gpsd_host, a.gpsd_port)
+                print(f"gpsd on {server.addr[0]}:{server.addr[1]}, ctrl-c to stop")
+
+            def on_nmea(line):
+                if server:
+                    server.feed(line)
+                if not a.quiet:
+                    print(line)
+
+            m.on_nmea = on_nmea
+            if not a.gpsd:
+                print("streaming NMEA, ctrl-c to stop")
+            try:
+                m.pump(a.seconds or 10 ** 9)
+            except KeyboardInterrupt:
+                print()
+            m.on_nmea = None
+            m.send(proto.GPS, b"\x00")
+
+    elif a.cmd == "ble":
+        m.request(proto.BLE, b"\x01" if a.state == "on" else b"\x00")
+
     elif a.cmd == "led":
         bits = {"red": 1, "green": 2, "blue": 4, "all": 7, "off": 0}
         mask = 0
@@ -396,7 +524,8 @@ def main():
                   "src": a.src, "srcssid": a.srcssid, "dst": a.dst,
                   "dstssid": a.dstssid, "lat": a.lat, "lon": a.lon,
                   "symbol": a.symbol, "addr": a.addr, "rate": a.rate,
-                  "shift": a.shift, "encoding": a.encoding}
+                  "shift": a.shift, "encoding": a.encoding,
+                  "gps": 1 if a.gps else None}
         print(time.strftime("%H:%M:%S"), end="  ")
         m.request(proto.PROTO, proto.encode_proto(fields),
                   want=(proto.TX_DONE, proto.ERR), timeout=60.0)

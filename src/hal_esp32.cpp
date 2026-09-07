@@ -4,11 +4,14 @@
 #include "board.h"
 #include <Preferences.h>
 
+Stream &halPort()
+{
 #ifdef MODEM_USE_UART2
-Stream &io = Serial2;
+    return Serial2;
 #else
-Stream &io = Serial;
+    return Serial;
 #endif
+}
 
 void halSerialBegin(unsigned long baud)
 {
@@ -23,6 +26,11 @@ void halSerialBegin(unsigned long baud)
 void halReboot()
 {
     ESP.restart();
+}
+
+bool halBootloader()
+{
+    return false;   // flashed over the serial bootloader, no host-visible mode
 }
 
 bool halSettingsLoad(void *blob, size_t len)

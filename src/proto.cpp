@@ -28,12 +28,16 @@ void FrameWriter::send(Stream &io) const
             crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
     }
 
-    uint8_t sof[2] = { PROTO_SOF0, PROTO_SOF1 };
-    io.write(sof, 2);
-    io.write(head, 3);
-    if (len_) io.write(buf_, len_);
-    uint8_t tail[2] = { (uint8_t)(crc & 0xFF), (uint8_t)(crc >> 8) };
-    io.write(tail, 2);
+    // One write, not five: over BLE each write becomes its own notification,
+    // and a four-packet ACK wastes a connection interval apiece.
+    uint8_t frame[PROTO_MAX_VALUE + 7];
+    frame[0] = PROTO_SOF0;
+    frame[1] = PROTO_SOF1;
+    memcpy(frame + 2, head, 3);
+    if (len_) memcpy(frame + 5, buf_, len_);
+    frame[5 + len_] = (uint8_t)(crc & 0xFF);
+    frame[6 + len_] = (uint8_t)(crc >> 8);
+    io.write(frame, len_ + 7);
 }
 
 bool TlvReader::next(uint8_t *id, const uint8_t **val, uint8_t *len)

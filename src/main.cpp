@@ -12,6 +12,9 @@
 #include "display.h"
 #include "protocols.h"
 #include "radio.h"
+#include "gps.h"
+#include "link.h"
+#include "ble_uart.h"
 
 #if defined(BOARD_TECHO) && !defined(RADIO_SX1262)
 #define RADIO_SX1262        // the T-Echo has no other option
@@ -91,9 +94,9 @@ static const Module::RfSwitchMode_t rfswitchTable[] = {
 };
 #endif
 
-#define FW_VERSION   "1.2.0"
+#define FW_VERSION   "1.3.0"
 #define CFG_MAGIC    0x4D475A53UL   // "SZGM"
-#define CFG_VERSION  7
+#define CFG_VERSION  9
 #define MAX_PAYLOAD  255
 #if RADIO_IS_SX126X
 #define MAX_FSK_PAYLOAD 255
@@ -145,6 +148,9 @@ struct Config {
     // never enables it, so asking the radio to run its PA from DC-DC starves
     // the amplifier while leaving receive perfectly healthy.
     bool     regLdo;
+
+    bool     gpsFeed;   // stream NMEA sentences to the host
+    bool     bleOn;     // advertise the BLE UART
 };
 
 static const Config defaults = {
@@ -158,6 +164,8 @@ static const Config defaults = {
 #else
     false,
 #endif
+    false,
+    true,
 };
 
 static Config cfg;
@@ -422,6 +430,13 @@ static void drainRx()
     rxFlag = false;   // drop any interrupt raised by our own re-arm
 }
 
+static void sendNmea(const char *line, size_t len)
+{
+    FrameWriter f(MSG_NMEA);
+    f.bytes((const uint8_t *)line, len);
+    f.send(io);
+}
+
 // ---------------------------------------------------------------- replies
 
 static void sendAck()
@@ -472,6 +487,11 @@ static void sendInfo()
     f.tlvU16(I_BATT_MV, (uint16_t)lroundf(boardBatteryVoltage() * 1000.0f));
     f.tlvU32(I_UPTIME_S, millis() / 1000);
     f.tlvStr(I_POWER_PATH, powerPath);
+    f.tlvStr(I_GPS, gpsStatus());
+    f.tlvStr(I_BLE, !HAS_BLE ? "none"
+                             : (bleConnected() ? "connected"
+                                               : (bleAdvertising() ? "advertising" : "off")));
+    f.tlvStr(I_BLE_NAME, bleName());
     f.send(io);
 }
 
@@ -615,8 +635,28 @@ static void handleFrame(uint8_t type, const uint8_t *val, uint16_t len)
 
         case MSG_LOAD:
             loadConfig();
+            gpsFeed(cfg.gpsFeed);
+            bleEnable(cfg.bleOn);
             reconfigure();
             sendConfig();
+            break;
+
+        case MSG_GPS:
+            if (len < 1) { fail(E_BAD_LENGTH, (int16_t)len); return; }
+            if (!HAS_GPS) { fail(E_UNSUPPORTED, 0); return; }
+            cfg.gpsFeed = (val[0] != 0);
+            gpsFeed(cfg.gpsFeed);
+            sendAck();
+            break;
+
+        case MSG_BLE:
+            if (len < 1) { fail(E_BAD_LENGTH, (int16_t)len); return; }
+            if (!HAS_BLE) { fail(E_UNSUPPORTED, 0); return; }
+            cfg.bleOn = (val[0] != 0);
+            // The ack has to leave before the link it arrived on goes away.
+            sendAck();
+            io.flush();
+            bleEnable(cfg.bleOn);
             break;
 
         case MSG_GET_STATS: {
@@ -711,6 +751,14 @@ static void handleFrame(uint8_t type, const uint8_t *val, uint16_t len)
                     case K_DSTSSID:  req.dstSsid = (uint8_t)n; break;
                     case K_SYMBOL:   req.symbol = (uint8_t)n; break;
                     case K_ENCODING: req.encoding = (uint8_t)n; break;
+                    case K_GPS:
+                        if (!n) break;
+                        if (!gpsPosition(req.lat, sizeof(req.lat),
+                                         req.lon, sizeof(req.lon))) {
+                            fail(E_NO_FIX, 0);
+                            return;
+                        }
+                        break;
                     case K_TEXT: {
                         // Binary safe: the TLV length is authoritative, and the
                         // spare byte keeps the text-only modes NUL terminated.
@@ -779,12 +827,15 @@ static void handleFrame(uint8_t type, const uint8_t *val, uint16_t len)
             break;
         }
 
-        case MSG_RESET:
+        case MSG_RESET: {
+            bool toBootloader = len >= 1 && val[0] != 0;
             sendAck();
             io.flush();
             delay(50);
+            if (toBootloader && halBootloader()) break;
             halReboot();
             break;
+        }
 
         default:
             fail(E_UNKNOWN_MSG, type);
@@ -794,49 +845,10 @@ static void handleFrame(uint8_t type, const uint8_t *val, uint16_t len)
 
 // ---------------------------------------------------------------- framing
 
-static void pollSerial()
+// src/link.cpp owns the frame parsers, one per transport, and calls back here.
+void linkError(uint8_t reason, int16_t code)
 {
-    static uint8_t state = 0, type = 0;
-    static uint16_t want = 0, got = 0, crcGot = 0;
-    static uint8_t val[PROTO_MAX_VALUE];
-
-    while (io.available()) {
-        uint8_t c = (uint8_t)io.read();
-        switch (state) {
-            case 0: if (c == PROTO_SOF0) state = 1; break;
-            // A second SOF0 keeps us waiting rather than dropping a real frame
-            // that follows a stray byte.
-            case 1: state = (c == PROTO_SOF1) ? 2 : (c == PROTO_SOF0 ? 1 : 0); break;
-            case 2: type = c; state = 3; break;
-            case 3: want = c; state = 4; break;
-            case 4:
-                want |= (uint16_t)c << 8;
-                if (want > PROTO_MAX_VALUE) { fail(E_BAD_LENGTH, (int16_t)want); state = 0; break; }
-                got = 0;
-                state = want ? 5 : 6;
-                break;
-            case 5:
-                val[got++] = c;
-                if (got >= want) state = 6;
-                break;
-            case 6: crcGot = c; state = 7; break;
-            case 7: {
-                crcGot |= (uint16_t)c << 8;
-                uint8_t head[3] = { type, (uint8_t)(want & 0xFF), (uint8_t)(want >> 8) };
-                uint16_t crc = protoCrc16(head, 3);
-                // Continue the CRC across the value with the same seed.
-                for (uint16_t i = 0; i < want; i++) {
-                    crc ^= (uint16_t)val[i] << 8;
-                    for (int b = 0; b < 8; b++)
-                        crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
-                }
-                if (crc == crcGot) handleFrame(type, val, want);
-                else fail(E_BAD_CRC, (int16_t)crcGot);
-                state = 0;
-                break;
-            }
-        }
-    }
+    fail(reason, code);
 }
 
 // ---------------------------------------------------------------- lifecycle
@@ -848,6 +860,8 @@ void setup()
 
     ledInit();
     powerPath = boardPowerInit();
+    gpsInit();
+    linkInit();
     displayInit();
 #if defined(BOARD_NUCLEO_WL55)
     radio.setRfSwitchTable(rfswitchPins, rfswitchTable);   // must precede begin()
@@ -865,6 +879,8 @@ void setup()
         }
     }
     startRx();
+    gpsFeed(cfg.gpsFeed);
+    bleEnable(cfg.bleOn);
 
     displayStatus(MODEM_BOARD, RADIO_NAME, FW_VERSION,
                   modeName(cfg.modem), cfg.freq, cfg.power);
@@ -876,7 +892,9 @@ void setup()
 
 void loop()
 {
-    pollSerial();
+    linkPoll(handleFrame);
+    gpsPoll(sendNmea);
+
     if (txActive) {
         if (rxFlag) finishTransmit();
         // A stuck transmit must not wedge the modem: SF12 at 255 bytes is

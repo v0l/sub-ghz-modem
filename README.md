@@ -38,6 +38,10 @@ tools/modem.py send morse "DE N0CALL" --rate 25
 tools/modem.py send pocsag --hex DEADBEEF --addr 123456
 tools/modem.py send aprs "hi" --src N0CALL --lat 5336.00N --lon 00638.00W
 tools/modem.py send rtty --hex 48454C4C4F --rate 45
+
+tools/modem.py gps                        # NMEA from the onboard receiver
+tools/modem.py gps --gpsd                 # and serve it to gpsd clients
+tools/modem.py send aprs "hi" --src N0CALL --gps   # position from the fix
 ```
 
 `send` kinds: `aprs ax25 pocsag rtty morse hell fsk4`. Payloads are bytes, so
@@ -48,6 +52,52 @@ config afterwards.
 `set` names: `modem freq power reg` always; `bw sf cr sync preamble crc` for
 LoRa; `bitrate fdev rxbw shaping syncbytes fskpreamble fskcrc fixedlen` for
 FSK/OOK; `lrbw lrcr lrgrid` for LR-FHSS. `--help` lists the rest.
+
+## GPS
+
+The T-Beam and T-Echo carry a receiver; the Nucleo does not, and `info` reports
+`gps=none` there. `gps on` streams each NMEA sentence to the host in its own
+frame, and the setting survives `save`. Position tracking runs whether or not
+the feed is on, so `send aprs --gps` fills latitude and longitude from the last
+fix and fails with `no GPS fix` rather than transmitting a wrong position. A fix
+older than 30 seconds counts as no fix.
+
+`gps --gpsd` additionally serves the feed on 127.0.0.1:2947 in the gpsd JSON
+protocol, so `cgps`, `gpspipe`, `chrony` and the usual client libraries can use
+the modem as their GPS. It answers `?WATCH`, `?POLL`, `?DEVICES` and `?VERSION`,
+emits `TPV` and `SKY`, and passes raw NMEA through when a client asks for it.
+One device, no probing, no control socket: run the real gpsd if you need those.
+Use `--gpsd-host 0.0.0.0` to share it on the network, which is unauthenticated.
+
+## BLE
+
+The same framed TLV protocol runs over a Nordic UART service, so a phone or any
+host with a Bluetooth adapter can drive the modem without a cable. It is on by
+default on the T-Echo and an opt-in env on the T-Beam (`tbeam-sx1276-ble`,
+`tbeam-sx1262-ble`), where NimBLE costs about 400 kB of the app partition. The
+Nucleo has no radio for it.
+
+```sh
+tools/modem.py list                       # serial ports and BLE modems in range
+tools/modem.py --ble info                 # scans and connects
+tools/modem.py --ble-target modem-FAC9 get
+tools/modem.py ble off                    # stop advertising, over either link
+```
+
+The advert carries the Nordic UART service so generic BLE terminals work, and
+the scan response carries `A55A0001-5A5A-4D4D-8D45-4D0000A55A5A`, our own
+marker, so `list` can say which advertisers are actually sub-ghz-modems rather
+than some other NUS device.
+
+Needs `bleak` on the host. Each transport has its own frame parser, so two
+clients cannot interleave into each other's frames, and a reply goes back to the
+link its command came from. Unsolicited frames, received packets and NMEA, go to
+every connected link.
+
+Always disconnect cleanly: a host that exits without closing the link leaves
+BlueZ holding the ACL, and the modem then stays connected and invisible to
+everyone else until the stale connection is dropped. `modem.py` closes on exit,
+including on ctrl-c.
 
 ## Protocol
 
@@ -76,6 +126,22 @@ monitor` replaces a terminal.
 ## Known issues
 
 - `batt_mv` on the T-Echo reads high; the divider constant is unverified.
+- The GPS feed and the gpsd server work on a T-Echo, but only ever tested
+  indoors: sentences, satellite lists, the gpsd `SKY` report and the no-fix
+  refusal are all confirmed, an actual position is not.
+- **Do not run the NMEA feed and a serial client at the same time as a BLE
+  client.** Requests, config, scans and the GPS feed each work fine over BLE on
+  their own, but with a BLE client connected and the feed running, the serial
+  side stops getting replies and sentences arrive spliced. A full notification
+  queue stalls `loop()` long enough to starve the UART; the write budget in
+  `src/ble_nrf52.cpp` bounds it but does not fix it. It needs an outgoing queue
+  drained from the loop rather than blocking writes.
+- The T-Echo runs its BLE stack from the internal RC oscillator. On the crystal
+  (`techo-lfxo`) the board advertises normally and then drops every connection
+  inside a second with `le-connection-abort-by-local`.
+- With two Bluetooth controllers present, scanning and connecting must use the
+  same one, or every connection times out. `tools/bleuart.py` tries each in
+  turn; `--ble-adapter hciN` pins it.
 - The T-Beam SX1262 variant and all LR-FHSS builds are untested on hardware.
   Tested: T-Beam v1.1 SX1276, T-Echo, Nucleo-WL55JC2.
 - APRS here is an AX.25 frame inside an ordinary FSK packet, not the 1200 baud

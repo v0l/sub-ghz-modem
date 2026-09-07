@@ -30,13 +30,15 @@
 #define MSG_RX_ENABLE   0x07
 #define MSG_SAVE        0x08
 #define MSG_LOAD        0x09
-#define MSG_RESET       0x0A
+#define MSG_RESET       0x0A  // optional u8: 1 reboots into the firmware updater
 #define MSG_GET_STATS   0x0B
 #define MSG_DIAG        0x0C
 #define MSG_SCAN        0x0D
 #define MSG_LED         0x0E  // u8 mask: bit0 red, bit1 green, bit2 blue
 #define MSG_PIN         0x0F  // u8 arduino pin, u8 level: drive any pin, for finding LEDs
 #define MSG_PROTO       0x10  // higher-level on-air formats, see src/protocols.h
+#define MSG_GPS         0x11  // u8: 1 starts the NMEA feed, 0 stops it
+#define MSG_BLE         0x12  // u8: 1 advertises the BLE UART, 0 stops it
 
 // Device to host
 #define MSG_ACK         0x81
@@ -49,6 +51,7 @@
 #define MSG_DIAG_RESULT 0x88
 #define MSG_READY       0x89
 #define MSG_SCAN_RESULT 0x8A
+#define MSG_NMEA        0x8B  // one NMEA sentence, no CRLF, unsolicited
 
 // Config parameter ids
 #define P_MODEM         0x01  // u8
@@ -87,6 +90,7 @@
 #define K_LON           0x0B  // string
 #define K_SYMBOL        0x0C  // u8 APRS symbol character
 #define K_ENCODING      0x0D  // u8
+#define K_GPS           0x0E  // u8, take lat/lon from the last GPS fix
 
 // Info field ids, reused inside MSG_INFO
 #define I_FW            0x01  // string
@@ -96,6 +100,9 @@
 #define I_BATT_MV       0x05  // u16
 #define I_UPTIME_S      0x06  // u32
 #define I_POWER_PATH    0x07  // string
+#define I_GPS           0x08  // string: none, off, no fix, fix
+#define I_BLE           0x09  // string: none, off, advertising, connected
+#define I_BLE_NAME      0x0A  // string, the advertised name
 
 // Error codes. Positive values are ours, negative ones are RadioLib's.
 #define E_BAD_CRC       1
@@ -107,6 +114,7 @@
 #define E_RADIO         7
 #define E_TX_ONLY       8
 #define E_BUSY          9
+#define E_NO_FIX        10
 
 // RX flags
 #define RXF_CRC_ERROR   0x01

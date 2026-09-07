@@ -3,7 +3,8 @@
 #include "hal.h"
 #include <EEPROM.h>   // pulls in the core stm32_eeprom buffered API
 
-Stream &io = Serial;   // LPUART1, the ST-LINK virtual COM port
+// LPUART1, the ST-LINK virtual COM port.
+Stream &halPort() { return Serial; }
 
 void halSerialBegin(unsigned long baud)
 {
@@ -17,6 +18,11 @@ void halReboot()
 
 // STM32WL has no real EEPROM. The core emulates one in the last flash page, so
 // writes go through a RAM buffer and one page erase, not a byte at a time.
+bool halBootloader()
+{
+    return false;   // flashed over the serial bootloader, no host-visible mode
+}
+
 bool halSettingsLoad(void *blob, size_t len)
 {
     if (len > E2END + 1) return false;

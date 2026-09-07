@@ -8,7 +8,7 @@ using namespace Adafruit_LittleFS_Namespace;
 
 #define CFG_PATH "/modem.cfg"
 
-Stream &io = Serial;
+Stream &halPort() { return Serial; }
 
 void halSerialBegin(unsigned long baud)
 {
@@ -20,6 +20,15 @@ void halSerialBegin(unsigned long baud)
 void halReboot()
 {
     NVIC_SystemReset();
+}
+
+// The Adafruit bootloader reads GPREGRET on reset: 0x57 means "stay in UF2
+// mode", which saves the double-tap on the T-Echo's recessed reset button.
+bool halBootloader()
+{
+    NRF_POWER->GPREGRET = 0x57;
+    NVIC_SystemReset();
+    return true;
 }
 
 bool halSettingsLoad(void *blob, size_t len)

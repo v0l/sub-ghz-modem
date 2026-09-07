@@ -23,6 +23,7 @@
 
 #define GPS_RX     34  // ESP32 receives on this
 #define GPS_TX     12
+#define GPS_BAUD   9600   // u-blox NEO-6M/M8N default
 
 #ifdef MODEM_USE_UART2
 #define MODEM_UART2_TX 25
@@ -68,8 +69,9 @@
 #define BATT_ADC    PIN_A0
 #define BATT_DIVIDER 2.0f
 
-#define GPS_RX     (32 + 9)
+#define GPS_RX     (32 + 9)   // also PIN_SERIAL1_RX in the variant
 #define GPS_TX     (32 + 8)
+#define GPS_BAUD   9600       // Quectel L76K default
 
 #define DEFAULT_FREQ 868.0f
 // One RGB package, common anode, so all three sink through the MCU. Meshtastic's
