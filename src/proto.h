@@ -75,6 +75,8 @@
 #define P_LR_CR         0x13  // u8
 #define P_LR_GRID       0x14  // u8
 #define P_FIXED_LEN     0x15  // u8, 0 = variable length with a length byte
+#define P_IMPLICIT      0x16  // u8 LoRa payload length, 0 = explicit header
+#define P_CR_LI         0x17  // u8, SX128x long interleaved coding
 
 // MSG_PROTO fields
 #define K_KIND          0x01  // u8 ProtoKind

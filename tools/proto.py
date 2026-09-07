@@ -46,6 +46,8 @@ P = {
     "lrcr":       (0x13, "u8"),
     "lrgrid":     (0x14, "u8"),
     "fixedlen":   (0x15, "u8"),
+    "implicit":   (0x16, "u8"),
+    "li":         (0x17, "u8"),
 }
 P_BY_ID = {v[0]: (k, v[1]) for k, v in P.items()}
 

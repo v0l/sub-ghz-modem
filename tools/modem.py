@@ -39,6 +39,13 @@ PRESETS = {
     "meshtastic-eu": "modem=lora freq=869.502 bw=250 sf=11 cr=5 sync=0x2B preamble=16",
     "lora-eu-868": "modem=lora freq=868.1 bw=125 sf=9 cr=7 sync=0x12 preamble=8 power=14",
     "lora-434": "modem=lora freq=434.0 bw=125 sf=9 cr=7 sync=0x12 preamble=8 power=10",
+    # ExpressLRS 2.4 GHz, 150 Hz and 100 Hz Full: SF7 over 812.5 kHz, implicit
+    # header, no LoRa CRC (the link guards its own packet), 12 symbol preamble.
+    # The payload length is what separates the two, 8 bytes against 13.
+    "elrs-2g4-150hz": "modem=lora freq=2440.0 bw=812.5 sf=7 cr=8 li=1 sync=0x12 "
+                      "preamble=12 crc=0 implicit=8 power=10",
+    "elrs-2g4-100hz-full": "modem=lora freq=2440.0 bw=812.5 sf=7 cr=8 li=1 sync=0x12 "
+                           "preamble=12 crc=0 implicit=13 power=10",
     "fsk-50k": "modem=fsk bitrate=50 fdev=50 rxbw=156.2 shaping=0.5 syncbytes=2DD4",
     # Fine Offset WH24/WH25/WH51/WH65 family: 17.24 kbit/s FSK, AA AA AA preamble
     # then a 2D D4 sync, raw fixed-length frame, station's own CRC in the payload.
@@ -73,7 +80,7 @@ def parse_value(name, text):
         return 1 if low in ("ldo", "1", "true") else 0
     if name == "syncbytes":
         return text
-    if name in ("crc", "fskcrc", "lrgrid"):
+    if name in ("crc", "fskcrc", "lrgrid", "li"):
         return 1 if low in ("1", "on", "true", "yes", "narrow") else 0
     if low.startswith("0x"):
         return int(text, 16)

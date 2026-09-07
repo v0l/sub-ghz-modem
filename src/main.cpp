@@ -45,8 +45,45 @@ typedef SX1276 RadioBase;
 #define PWR_MAX 20
 #define HAS_OOK 1
 #define RADIO_IS_SX126X 0
+#elif defined(RADIO_SX1280) || defined(RADIO_SX1281)
+// RadioLib picks the driver by the chip's version string register, and the
+// SX1281 on a RadioMaster RP2 reports "SX1280" there despite the marking on the
+// package. The SX1281 class rejects it outright, so build these boards as an
+// SX1280: the classes differ only in the ranging engine an SX1281 lacks and
+// this modem never uses.
+#ifdef RADIO_SX1281
+typedef SX1281 RadioBase;
+#define RADIO_NAME "SX1281"
 #else
-#error "Build with -DRADIO_SX1276, -DRADIO_SX1262 or -DRADIO_STM32WLX"
+typedef SX1280 RadioBase;
+#define RADIO_NAME "SX1280"
+#endif
+#define PWR_MIN (-18)
+#define PWR_MAX 13          // +12.5 dBm, and RadioLib takes whole dBm
+#define HAS_OOK 0
+#define RADIO_IS_SX126X 0
+#else
+#error "Build with -DRADIO_SX1276, -DRADIO_SX1262, -DRADIO_STM32WLX or -DRADIO_SX1280"
+#endif
+
+// The SX128x is the only family with the long interleaved coding rates and the
+// only one whose FSK mode is reached through beginGFSK().
+#if defined(RADIO_SX1280) || defined(RADIO_SX1281)
+#define RADIO_IS_SX128X 1
+#else
+#define RADIO_IS_SX128X 0
+#endif
+
+// Boards that inherit the SX127x-shaped defaults say nothing; the RP2 cannot,
+// because 125 kHz is not a bandwidth an SX128x has.
+#ifndef DEFAULT_BW
+#define DEFAULT_BW 125.0f
+#endif
+#ifndef DEFAULT_SF
+#define DEFAULT_SF 9
+#endif
+#ifndef DEFAULT_POWER
+#define DEFAULT_POWER 17
 #endif
 
 #if defined(ENABLE_LRFHSS) && !RADIO_IS_SX126X
@@ -66,11 +103,31 @@ public:
         return v;
     }
 #endif
+#if RADIO_IS_SX128X
+    // begin() reports one error for a dead bus and for a chip whose identity
+    // string is not the one RadioLib expects. Sixteen bytes of 0x00 or 0xFF is
+    // the first, anything legible is the second.
+    void diagVersion(uint8_t *out) {
+        Module *m = this->getMod();
+        m->init();
+        m->spiConfig.widths[RADIOLIB_MODULE_SPI_WIDTH_ADDR] = Module::BITS_16;
+        m->spiConfig.widths[RADIOLIB_MODULE_SPI_WIDTH_CMD] = Module::BITS_8;
+        m->spiConfig.statusPos = 1;
+        m->spiConfig.cmds[RADIOLIB_MODULE_SPI_COMMAND_READ] = RADIOLIB_SX128X_CMD_READ_REGISTER;
+        m->spiConfig.cmds[RADIOLIB_MODULE_SPI_COMMAND_WRITE] = RADIOLIB_SX128X_CMD_WRITE_REGISTER;
+        m->spiConfig.cmds[RADIOLIB_MODULE_SPI_COMMAND_NOP] = RADIOLIB_SX128X_CMD_NOP;
+        m->spiConfig.cmds[RADIOLIB_MODULE_SPI_COMMAND_STATUS] = RADIOLIB_SX128X_CMD_GET_STATUS;
+        m->spiConfig.stream = true;
+        // No status parser: a raw read is what we want, errors and all.
+        this->reset(true);
+        m->SPIreadRegisterBurst(RADIOLIB_SX128X_REG_VERSION_STRING, 16, out);
+    }
+#endif
 };
 
 #if defined(RADIO_STM32WLX)
 static ModemRadio radio(new STM32WLx_Module());
-#elif defined(RADIO_SX1262)
+#elif defined(RADIO_SX1262) || defined(RADIO_SX1280) || defined(RADIO_SX1281)
 static ModemRadio radio(new Module(LORA_CS, LORA_DIO1, LORA_RST, LORA_BUSY));
 #else
 static ModemRadio radio(new Module(LORA_CS, LORA_DIO0, LORA_RST, LORA_DIO1));
@@ -96,7 +153,7 @@ static const Module::RfSwitchMode_t rfswitchTable[] = {
 
 #define FW_VERSION   "1.3.0"
 #define CFG_MAGIC    0x4D475A53UL   // "SZGM"
-#define CFG_VERSION  9
+#define CFG_VERSION  10
 #define MAX_PAYLOAD  255
 #if RADIO_IS_SX126X
 #define MAX_FSK_PAYLOAD 255
@@ -125,6 +182,13 @@ struct Config {
     uint8_t  syncWord;
     uint16_t preamble;  // symbols
     bool     crc;
+    // Implicit header mode: no length, rate or CRC flag on the air, so both ends
+    // have to be told the payload size. 0 keeps the explicit header. ExpressLRS
+    // and every other fixed-frame LoRa link runs implicit.
+    uint8_t  loraImplicit;
+    // The SX128x long interleaved coding rates, which Semtech names and does not
+    // describe. Not a rate of its own: it re-arranges the same 4/5 .. 4/8.
+    bool     crLongInterleave;
 
     // FSK / OOK
     float    br;        // kbps
@@ -155,8 +219,8 @@ struct Config {
 
 static const Config defaults = {
     CFG_MAGIC, CFG_VERSION,
-    MODE_LORA, DEFAULT_FREQ, 17,
-    125.0f, 9, 7, 0x12, 8, true,
+    MODE_LORA, DEFAULT_FREQ, DEFAULT_POWER,
+    DEFAULT_BW, DEFAULT_SF, 7, 0x12, 8, true, 0, false,
     4.8f, 25.0f, 58.6f, RADIOLIB_SHAPING_NONE, 2, {0x2D, 0xD4, 0, 0, 0, 0, 0, 0}, 16, true, 0,
     0, 0, false,
 #ifdef DEFAULT_REG_LDO
@@ -255,10 +319,33 @@ static bool radioInit()
                         cfg.power, cfg.preamble);
 #endif
         if (s != RADIOLIB_ERR_NONE) { fail(E_RADIO, s); return false; }
-        if ((s = radio.setCRC(cfg.crc)) != RADIOLIB_ERR_NONE) { fail(E_RADIO, s); return false; }
+#if RADIO_IS_SX128X
+        // begin() takes the coding rate but not the interleave flag, so the rate
+        // is set a second time to carry it.
+        if (cfg.crLongInterleave) {
+            if ((s = radio.setCodingRate(cfg.cr, true)) != RADIOLIB_ERR_NONE) {
+                fail(E_RADIO, s); return false;
+            }
+        }
+        // On the SX128x the argument is a CRC length in bytes, not a flag.
+        s = radio.setCRC(cfg.crc ? 2 : 0);
+#else
+        s = radio.setCRC(cfg.crc);
+#endif
+        if (s != RADIOLIB_ERR_NONE) { fail(E_RADIO, s); return false; }
+
+        s = cfg.loraImplicit ? radio.implicitHeader(cfg.loraImplicit)
+                             : radio.explicitHeader();
+        if (s != RADIOLIB_ERR_NONE) { fail(E_RADIO, s); return false; }
 
     } else if (cfg.modem == MODE_FSK || cfg.modem == MODE_OOK) {
-#if RADIO_IS_SX126X
+#if RADIO_IS_SX128X
+        if (cfg.modem == MODE_OOK) { fail(E_UNSUPPORTED, 0); return false; }
+        // The SX128x FSK mode is GFSK only, its bit rate is whole kbps, and the
+        // receive bandwidth follows the rate rather than being set.
+        s = radio.beginGFSK(cfg.freq, (uint16_t)lroundf(cfg.br), cfg.fdev,
+                            cfg.power, cfg.fskPreamble);
+#elif RADIO_IS_SX126X
         if (cfg.modem == MODE_OOK) { fail(E_UNSUPPORTED, 0); return false; }
         s = radio.beginFSK(cfg.freq, cfg.br, cfg.fdev, cfg.rxbw,
                            cfg.power, cfg.fskPreamble, LORA_TCXO_V, cfg.regLdo);
@@ -283,8 +370,8 @@ static bool radioInit()
                 fail(E_RADIO, s); return false;
             }
         }
-#if RADIO_IS_SX126X
-        // On SX126x the FSK setCRC argument is a length in bytes, not a flag.
+#if RADIO_IS_SX126X || RADIO_IS_SX128X
+        // On SX126x and SX128x the FSK setCRC argument is a length in bytes.
         s = radio.setCRC(cfg.fskCrc ? 2 : 0);
 #else
         s = radio.setCRC(cfg.fskCrc);
@@ -449,7 +536,9 @@ static void sendConfig()
 {
     FrameWriter f(MSG_CONFIG);
     f.tlvU8(P_MODEM, cfg.modem);
-    f.tlvU32(P_FREQ, (uint32_t)lroundf(cfg.freq * 1000000.0f));
+    // 2.4 GHz in Hz overflows a 32 bit signed long, which is what lroundf
+    // returns, and the readback saturates at 2147.483647 MHz.
+    f.tlvU32(P_FREQ, (uint32_t)llroundf(cfg.freq * 1000000.0f));
     f.tlvU8(P_POWER, (uint8_t)cfg.power);
     f.tlvU8(P_REG_LDO, cfg.regLdo ? 1 : 0);
 
@@ -460,6 +549,8 @@ static void sendConfig()
         f.tlvU8(P_SYNCWORD, cfg.syncWord);
         f.tlvU16(P_PREAMBLE, cfg.preamble);
         f.tlvU8(P_CRC, cfg.crc ? 1 : 0);
+        f.tlvU8(P_IMPLICIT, cfg.loraImplicit);
+        f.tlvU8(P_CR_LI, cfg.crLongInterleave ? 1 : 0);
     } else if (cfg.modem == MODE_FSK || cfg.modem == MODE_OOK) {
         f.tlvU32(P_BITRATE, (uint32_t)lroundf(cfg.br * 1000.0f));
         f.tlvU32(P_FDEV, (uint32_t)lroundf(cfg.fdev * 1000.0f));
@@ -527,6 +618,16 @@ static bool applyParam(uint8_t id, const uint8_t *v, uint8_t len)
         case P_SYNCWORD: cfg.syncWord = (uint8_t)n; return true;
         case P_PREAMBLE: cfg.preamble = (uint16_t)n; return true;
         case P_CRC:      cfg.crc = (n != 0); return true;
+        case P_IMPLICIT:
+            if (n > MAX_PAYLOAD) return false;
+            cfg.loraImplicit = (uint8_t)n;
+            return true;
+        case P_CR_LI:
+#if !RADIO_IS_SX128X
+            if (n != 0) return false;   // an SX127x/SX126x has no such rate
+#endif
+            cfg.crLongInterleave = (n != 0);
+            return true;
         case P_BITRATE:  cfg.br = n / 1000.0f; return true;
         case P_FDEV:     cfg.fdev = n / 1000.0f; return true;
         case P_RXBW:     cfg.rxbw = n / 1000.0f; return true;
@@ -865,14 +966,25 @@ void setup()
     displayInit();
 #if defined(BOARD_NUCLEO_WL55)
     radio.setRfSwitchTable(rfswitchPins, rfswitchTable);   // must precede begin()
-#elif defined(BOARD_TECHO)
-    SPI.begin();   // the variant already pins SPI to the radio bus
+#elif defined(BOARD_TECHO) || defined(BOARD_RP2)
+    // T-Echo: the variant already pins SPI to the radio bus. RP2: the ESP8266
+    // core has one hardware SPI on fixed pins, which are the radio's.
+    SPI.begin();
 #else
     SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
 #endif
     loadConfig();
 
     if (!radioInit()) {
+#if RADIO_IS_SX128X
+        uint8_t ver[16] = { 0 };
+        radio.diagVersion(ver);
+        outf("sx128x id: %02x%02x%02x%02x%02x%02x%02x%02x '%c%c%c%c%c%c'\n",
+             ver[0], ver[1], ver[2], ver[3], ver[4], ver[5], ver[6], ver[7],
+             isprint(ver[0]) ? ver[0] : '.', isprint(ver[1]) ? ver[1] : '.',
+             isprint(ver[2]) ? ver[2] : '.', isprint(ver[3]) ? ver[3] : '.',
+             isprint(ver[4]) ? ver[4] : '.', isprint(ver[5]) ? ver[5] : '.');
+#endif
         while (true) {
             fail(E_RADIO, 0);
             delay(2000);

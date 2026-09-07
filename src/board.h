@@ -121,8 +121,42 @@
 
 #define MODEM_BOARD "Nucleo-WL55JC"
 
+#elif defined(BOARD_RP2)
+
+// RadioMaster RP2, an ExpressLRS receiver: ESP8285 wired to an SX1281. The bus
+// is the one every ExpressLRS ESP8285 2.4 GHz target uses, from the firmware's
+// own src/include/target/DIY_2400_RX_ESP8285_SX1280.h, and matches the RP2
+// entry in ExpressLRS/targets. These are also the ESP8266 hardware SPI pins, so
+// SPI.begin() finds them without being told.
+#define LORA_SCK   14
+#define LORA_MISO  12
+#define LORA_MOSI  13
+#define LORA_CS    15
+#define LORA_RST   2
+#define LORA_DIO1  4
+#define LORA_BUSY  5
+
+// 2.4 GHz ISM, and the ExpressLRS LoRa parameters: SF7 over 812.5 kHz. 125 kHz
+// is not a bandwidth an SX128x has, so the SX127x defaults cannot be inherited.
+#define DEFAULT_FREQ  2440.0f
+#define DEFAULT_BW    812.5f
+#define DEFAULT_SF    7
+// The SX1281 PA stops at +12.5 dBm.
+#define DEFAULT_POWER 10
+
+// GPIO16 is the LED on the ExpressLRS DIY layout. Unverified on the RP2 itself,
+// and it drives nothing else, so a wrong guess costs a dark LED and no more.
+#define LED_RED    16
+#define LED_GREEN  16
+#define LED_BLUE   16
+#define LED_RX     LED_RED
+#define LED_TX     LED_BLUE
+#define LED_ACTIVE_LOW 1
+
+#define MODEM_BOARD "RadioMaster RP2"
+
 #else
-#error "Build with -DBOARD_TBEAM, -DBOARD_TECHO or -DBOARD_NUCLEO_WL55"
+#error "Build with -DBOARD_TBEAM, -DBOARD_TECHO, -DBOARD_NUCLEO_WL55 or -DBOARD_RP2"
 #endif
 
 // Brings up whatever rail feeds the radio. Returns a short description of the

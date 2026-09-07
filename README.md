@@ -9,9 +9,10 @@ addressing. Your protocol lives on the host.
 | LilyGO T-Beam v0.7 - v1.2 | ESP32 | SX1276 or SX1262 |
 | LilyGO T-Echo | nRF52840 | SX1262 |
 | ST NUCLEO-WL55JC | STM32WL55 | on-die SX126x |
+| RadioMaster RP2 (an ExpressLRS receiver) | ESP8285 | SX1281, 2.4 GHz |
 
 LoRa and FSK/GFSK on every radio. OOK on SX1276 only. LR-FHSS on SX126x only,
-transmit only, opt-in build. Higher-level formats on top: APRS, AX.25, POCSAG,
+transmit only, opt-in build. The long interleaved coding rates are SX1281 only. Higher-level formats on top: APRS, AX.25, POCSAG,
 RTTY, Morse, Hellschreiber and 4-FSK. Status screen on boards that have one.
 
 ## Build
@@ -22,6 +23,7 @@ pio run -e tbeam-sx1276 -t upload    # also tbeam-sx1262, and -uart2 variants
 pio run -e wl55 -t upload            # JC1, 865-928 MHz
 pio run -e wl55-lowband -t upload    # JC2, 430-510 MHz
 pio run -e techo                     # then see docs/notes.md, UF2 only
+pio run -e rp2-sx1281                # see docs/rp2.md, BOOT pad and no auto-reset
 ```
 
 ## Use
@@ -49,8 +51,8 @@ tools/modem.py send aprs "hi" --src N0CALL --gps   # position from the fix
 character formats. These take the radio into direct mode and restore your packet
 config afterwards.
 
-`set` names: `modem freq power reg` always; `bw sf cr sync preamble crc` for
-LoRa; `bitrate fdev rxbw shaping syncbytes fskpreamble fskcrc fixedlen` for
+`set` names: `modem freq power reg` always; `bw sf cr sync preamble crc implicit
+li` for LoRa; `bitrate fdev rxbw shaping syncbytes fskpreamble fskcrc fixedlen` for
 FSK/OOK; `lrbw lrcr lrgrid` for LR-FHSS. `--help` lists the rest.
 
 ## GPS
