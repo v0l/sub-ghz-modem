@@ -156,6 +156,19 @@ used `preambleLen + 1` as the NRZI start index, but that value counts bytes
 everywhere else in the function, so only the first nine bits were left
 unencoded. AX.25 NRZI-encodes the whole transmission including flags.
 
+## Bluefruit's default MTU makes every long reply time out
+
+On the T-Echo, `Bluefruit.begin()` leaves the ATT MTU at 23 and the SoftDevice
+notification queue one deep, so the modem can push 20 bytes per connection
+event. An ACK fits; an `info` or `config` reply needs six notifications, the
+write loop in `src/ble_nrf52.cpp` abandons the frame after 25 ms, and the host
+sees a truncated frame and prints `no reply from modem` while the same command
+over USB answers fine. `Bluefruit.configPrphBandwidth(BANDWIDTH_MAX)` before
+`begin()` asks for MTU 247 and a three-deep queue, which is one notification per
+frame. It also costs SoftDevice RAM: if the linker cannot give it, `begin()`
+returns false and BLE stays dark rather than half working, so `info` then
+reports `ble=off`.
+
 ## Design choices
 
 - Changing any parameter re-runs `begin()` rather than poking registers. Simpler,

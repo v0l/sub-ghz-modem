@@ -6,6 +6,7 @@
 
 static BLEUart bleuart;
 static bool enabled = false;
+static bool stackUp = false;
 static char devName[20];
 
 // Bluefruit.connHandle() is only meaningful inside its own event callbacks, so
@@ -27,10 +28,22 @@ void bleInit()
     snprintf(devName, sizeof(devName), "modem-%04X",
              (unsigned)(NRF_FICR->DEVICEID[1] & 0xFFFF));
 
-    Bluefruit.begin();
+    // Bluefruit defaults to a 23 byte ATT MTU and a one-deep notification
+    // queue, so a reply leaves at 20 bytes per connection event. An INFO or
+    // CONFIG frame needs six of those, the write loop below gives up after
+    // 25 ms, and the host sees a truncated frame and reports no reply.
+    // BANDWIDTH_MAX asks the SoftDevice for MTU 247 and a three-deep queue,
+    // which puts any frame the modem sends into one or two notifications.
+    Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
+    stackUp = Bluefruit.begin();
+    if (!stackUp) return;   // SoftDevice wanted more RAM than the linker gave
+
     Bluefruit.setName(devName);
     Bluefruit.Periph.setConnectCallback(onConnect);
     Bluefruit.Periph.setDisconnectCallback(onDisconnect);
+    // 11.25-30 ms: BlueZ otherwise settles on 50 ms, which triples the
+    // round trip of every request.
+    Bluefruit.Periph.setConnInterval(9, 24);
     Bluefruit.setTxPower(4);
     bleuart.begin();
 
@@ -49,6 +62,7 @@ void bleInit()
 
 void bleEnable(bool on)
 {
+    if (!stackUp) return;
     enabled = on;
     if (on) {
         Bluefruit.Advertising.start(0);   // no timeout, advertise until connected
@@ -60,7 +74,7 @@ void bleEnable(bool on)
 
 bool bleEnabled()   { return enabled; }
 bool bleConnected() { return enabled && connHdl != BLE_CONN_HANDLE_INVALID; }
-bool bleAdvertising() { return Bluefruit.Advertising.isRunning(); }
+bool bleAdvertising() { return stackUp && Bluefruit.Advertising.isRunning(); }
 const char *bleName() { return devName; }
 
 // restartOnDisconnect() does not always re-arm: after one client disconnects the
@@ -68,7 +82,7 @@ const char *bleName() { return devName; }
 // still reporting itself enabled. Re-arm it here instead of trusting the flag.
 void blePoll()
 {
-    if (enabled && connHdl == BLE_CONN_HANDLE_INVALID &&
+    if (stackUp && enabled && connHdl == BLE_CONN_HANDLE_INVALID &&
         !Bluefruit.Advertising.isRunning()) {
         Bluefruit.Advertising.start(0);
     }
