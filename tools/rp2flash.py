@@ -8,6 +8,10 @@ BOOT pad. What this does is watch the ROM's own boot banner, which prints at
 
     tools/rp2flash.py write .pio/build/rp2-sx1281/firmware.bin
     tools/rp2flash.py read  rp2-stock.bin        # 2 MB, back this up first
+    tools/rp2flash.py erase-write elrs.bin       # erase first, for ExpressLRS
+
+Use erase-write when putting ExpressLRS back on: ExpressLRS issue #3023 has
+RP2s bricking when one release is written over another without an erase.
 """
 
 import subprocess
@@ -40,7 +44,7 @@ def wait_for_download_mode(port, seconds=45):
 
 
 def main():
-    if len(sys.argv) < 3 or sys.argv[1] not in ("read", "write"):
+    if len(sys.argv) < 3 or sys.argv[1] not in ("read", "write", "erase-write"):
         sys.exit(__doc__)
     action, path = sys.argv[1], sys.argv[2]
     port = sys.argv[3] if len(sys.argv) > 3 else "/dev/ttyUSB1"
@@ -50,10 +54,14 @@ def main():
 
     base = ["esptool", "--port", port, "--baud", "115200",
             "--before", "no-reset", "--after", "no-reset"]
-    if action == "write":
-        cmd = base + ["write-flash", "0", path]
-    else:
+    # One invocation for erase and write: the stub only lives as long as the
+    # esptool process, and nothing here can reset the chip to start another.
+    if action == "read":
         cmd = base + ["read-flash", "0", FLASH_SIZE, path]
+    elif action == "erase-write":
+        cmd = base + ["write-flash", "--erase-all", "0", path]
+    else:
+        cmd = base + ["write-flash", "0", path]
     return subprocess.run(cmd).returncode
 
 
