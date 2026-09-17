@@ -1002,10 +1002,26 @@ void setup()
     sendInfo();
 }
 
+// What the screen's lamp row shows, read together so a repaint happens when
+// the picture changes rather than once per flag.
+static void pushLamps()
+{
+    Lamps l = {};
+    l.bleAdv = bleAdvertising();
+    l.bleLink = bleConnected();
+    l.serial = linkSerialSeen();
+    l.gps = HAS_GPS;
+    l.gpsFix = gpsHasFix();
+    l.tx = txActive;
+    l.rx = !txActive && rxEnabled && rxCapable;
+    displayLamps(l);
+}
+
 void loop()
 {
     linkPoll(handleFrame);
     gpsPoll(sendNmea);
+    pushLamps();
 
     if (txActive) {
         if (rxFlag) finishTransmit();

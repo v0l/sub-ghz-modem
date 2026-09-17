@@ -6,6 +6,13 @@
 enum Target : uint8_t { T_ALL, T_SERIAL, T_BLE };
 static Target target = T_ALL;
 
+static uint32_t lastSerialFrame = 0;
+
+bool linkSerialSeen()
+{
+    return lastSerialFrame && millis() - lastSerialFrame < LINK_SEEN_MS;
+}
+
 // One instance per transport. The reply target follows whichever parser is
 // dispatching, so two clients never see each other's answers.
 class Parser {
@@ -57,7 +64,10 @@ void Parser::feed(uint8_t c, LinkHandler handler)
                     crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
             }
             target = src_;
-            if (crc == crcGot_) handler(type_, val_, want_);
+            if (crc == crcGot_) {
+                if (src_ == T_SERIAL) lastSerialFrame = millis();
+                handler(type_, val_, want_);
+            }
             else linkError(E_BAD_CRC, (int16_t)crcGot_);
             target = T_ALL;
             state_ = 0;

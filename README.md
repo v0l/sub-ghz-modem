@@ -15,6 +15,19 @@ LoRa and FSK/GFSK on every radio. OOK on SX1276 only. LR-FHSS on SX126x only,
 transmit only, opt-in build. The long interleaved coding rates are SX1281 only. Higher-level formats on top: APRS, AX.25, POCSAG,
 RTTY, Morse, Hellschreiber and 4-FSK. Status screen on boards that have one.
 
+## Status screen
+
+The board, the radio, the frequency and the mode, with a row of lamps along the
+bottom: an up arrow while transmitting or a down arrow while listening, a plug
+when a host has sent a frame in the last fifteen seconds, a globe that fills in
+when the GPS has a fix, and the Bluetooth rune, boxed when a host is connected
+and bare while advertising. A lamp that is off leaves no gap.
+
+Serial has no carrier to detect, since DTR is not wired to the MCU on any of
+these boards, so the plug means traffic rather than a cable. The T-Echo's
+e-paper shows the same state in words and only at a full repaint, because a
+refresh blocks for about two seconds; the T-Beam's OLED follows it live.
+
 ## Build
 
 ```sh

@@ -28,7 +28,8 @@ void displayInit()
 }
 
 void displayRender(const char *board, const char *radio, const char *fw,
-                   const char *modem, float freqMhz, int8_t power)
+                   const char *modem, float freqMhz, int8_t power,
+                   const Lamps &lamps)
 {
     if (!ready) return;
 
@@ -82,8 +83,17 @@ void displayRender(const char *board, const char *radio, const char *fw,
         snprintf(line, sizeof(line), "%s  %d dBm", modem, power);
         epd.setCursor(4, y); epd.print(line); y += 24;
 
-        epd.setCursor(4, y);
-        epd.print("serial: TLV @115200");
+        // Words rather than the OLED's icons: a full refresh is two seconds,
+        // so this is a snapshot from the last repaint and should not pretend
+        // to be a live lamp.
+        snprintf(line, sizeof(line), "gps   %s",
+                 !lamps.gps ? "none" : lamps.gpsFix ? "locked" : "searching");
+        epd.setCursor(4, y); epd.print(line); y += 18;
+        snprintf(line, sizeof(line), "link  %s%s%s",
+                 lamps.serial ? "serial " : "",
+                 lamps.bleLink ? "ble " : lamps.bleAdv ? "advert " : "",
+                 lamps.tx ? "tx" : lamps.rx ? "rx" : "idle");
+        epd.setCursor(4, y); epd.print(line);
     } while (epd.nextPage());
 
     epd.hibernate();

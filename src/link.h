@@ -16,5 +16,11 @@ void linkInit();
 // goes to every connected transport.
 void linkPoll(LinkHandler handler);
 
+// Whether a host is on the serial port, which a USB bridge cannot answer: DTR
+// is not wired to the MCU on any of these boards, so the only evidence of a
+// host is a frame it sent. True for LINK_SEEN_MS after the last valid one.
+#define LINK_SEEN_MS 15000UL
+bool linkSerialSeen();
+
 // Implemented by main.cpp: emits MSG_ERR and counts the failure.
 void linkError(uint8_t reason, int16_t code);
